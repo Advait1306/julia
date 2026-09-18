@@ -15,7 +15,7 @@ import JuliaKit
     @Published var downloadProgress: Double?
     @Published var usedApplications: [String] = []
     @Published var events: [TraceEvent] = []
-    private let runtime = LlamaRuntime()
+    private let runtime = MLXRuntime()
     private let store = ModelStore()
     private var trace: TraceLog?
     private var harness: AssistantHarness?

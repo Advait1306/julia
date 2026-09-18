@@ -1,0 +1,55 @@
+diff --git a/Packages/JuliaKit/Sources/JuliaKit/Inference.swift b/Packages/JuliaKit/Sources/JuliaKit/Inference.swift
+index 971826c..3b9729a 100644
+--- a/Packages/JuliaKit/Sources/JuliaKit/Inference.swift
++++ b/Packages/JuliaKit/Sources/JuliaKit/Inference.swift
+@@ -11,10 +11,11 @@ public struct Generation: Sendable {
+     public let promptTokens: Int
+     public let generatedTokens: Int
+     public let duration: Double
++    public let firstTokenDuration: Double
+     public let stopReason: String
+-    public init(text: String, promptTokens: Int = 0, generatedTokens: Int = 0, duration: Double = 0, stopReason: String = "complete") {
++    public init(text: String, promptTokens: Int = 0, generatedTokens: Int = 0, duration: Double = 0, stopReason: String = "complete", firstTokenDuration: Double = 0) {
+         self.text = text; self.promptTokens = promptTokens; self.generatedTokens = generatedTokens
+-        self.duration = duration; self.stopReason = stopReason
++        self.duration = duration; self.stopReason = stopReason; self.firstTokenDuration = firstTokenDuration
+     }
+ }
+ public protocol ModelGenerating: Sendable {
+@@ -123,11 +124,13 @@ public actor LlamaRuntime: ModelGenerating {
+         llama_sampler_chain_add(sampler, grammar)
+         llama_sampler_chain_add(sampler, llama_sampler_init_greedy())
+         var output = Data()
++        var firstTokenDuration = 0.0
+         var count = 0
+         var reason = "length"
+         for _ in 0..<Self.maxOutputTokens {
+             try Task.checkCancellation()
+             var token = llama_sampler_sample(sampler, context, -1)
++            if firstTokenDuration == 0 { firstTokenDuration = Date().timeIntervalSince(start) }
+             if llama_vocab_is_eog(vocabulary, token) { reason = "eog"; break }
+             var buffer = [CChar](repeating: 0, count: 512)
+             var n = llama_token_to_piece(vocabulary, token, &buffer, Int32(buffer.count), 0, false)
+@@ -146,6 +149,6 @@ public actor LlamaRuntime: ModelGenerating {
+             guard status == 0 else { throw JuliaError("Token evaluation failed (\(status)).") }
+         }
+         return Generation(text: String(decoding: output, as: UTF8.self), promptTokens: tokens.count,
+-                          generatedTokens: count, duration: Date().timeIntervalSince(start), stopReason: reason)
++                          generatedTokens: count, duration: Date().timeIntervalSince(start), stopReason: reason, firstTokenDuration: firstTokenDuration)
+     }
+ }
+diff --git a/Packages/JuliaKit/Sources/JuliaSmoke/main.swift b/Packages/JuliaKit/Sources/JuliaSmoke/main.swift
+index 5ced8b2..63b1f8a 100644
+--- a/Packages/JuliaKit/Sources/JuliaSmoke/main.swift
++++ b/Packages/JuliaKit/Sources/JuliaSmoke/main.swift
+@@ -73,6 +73,10 @@ private actor DataCheckTools: ToolExecuting {
+         let path = try await store.prepare { print($0.message) }
+         let runtime = LlamaRuntime()
+         try await runtime.load(url: path)
++        if CommandLine.arguments.contains("--benchmark") {
++            try await ModelBenchmark.run(runtime: runtime)
++            return
++        }
+         if CommandLine.arguments.contains("--check-data") {
+             let cases: [(String, String, String?, Bool)] = [
+                 ("What's vivek's contact?", "contacts.search", "Vivek", false),

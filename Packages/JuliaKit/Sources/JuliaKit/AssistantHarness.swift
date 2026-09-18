@@ -77,7 +77,7 @@ public actor AssistantHarness {
                         + [ModelMessage(role: "user", content: command)]
                         + exchanges.flatMap { $0 }
                     promptTokens = try await model.tokenCount(messages: messages)
-                    if promptTokens <= LlamaRuntime.maxPromptTokens { break }
+                    if promptTokens <= MLXRuntime.maxPromptTokens { break }
                     if exchanges.count > 1 {
                         exchanges.removeFirst()
                         trace.record("context.pruned", turn: turn, step: step, .object(["kind": .string("oldest_tool_exchange"), "tokensBefore": .number(Double(promptTokens))]))
@@ -85,17 +85,17 @@ public actor AssistantHarness {
                 }
                 trace.record("model.request", turn: turn, step: step, .object([
                     "messages": .array(messages.map { .object(["role": .string($0.role), "content": .string($0.content)]) }),
-                    "renderedPrompt": .string(LlamaRuntime.prompt(messages)),
-                    "enableThinking": .bool(LlamaRuntime.thinkingEnabled),
-                    "contextSize": .number(Double(LlamaRuntime.contextSize)),
-                    "maxPromptTokens": .number(Double(LlamaRuntime.maxPromptTokens)),
-                    "promptTokens": .number(Double(promptTokens)), "grammar": .string(ActionGrammar.source)
+                    "renderedPrompt": .string(MLXRuntime.prompt(messages)),
+                    "enableThinking": .bool(MLXRuntime.thinkingEnabled),
+                    "contextSize": .number(Double(MLXRuntime.contextSize)),
+                    "maxPromptTokens": .number(Double(MLXRuntime.maxPromptTokens)),
+                    "promptTokens": .number(Double(promptTokens)), "outputConstraint": .string("prompt-and-validation")
                 ]))
                 let generation = try await model.generate(messages: messages)
                 trace.record("model.response", turn: turn, step: step, .object([
                     "raw": .string(generation.text), "promptTokens": .number(Double(generation.promptTokens)),
                     "generatedTokens": .number(Double(generation.generatedTokens)),
-                    "durationMs": .number(generation.duration * 1000), "stopReason": .string(generation.stopReason)
+                    "durationMs": .number(generation.duration * 1000), "firstTokenMs": .number(generation.firstTokenDuration * 1000), "stopReason": .string(generation.stopReason)
                 ]))
                 try Task.checkCancellation()
                 let action: ModelAction

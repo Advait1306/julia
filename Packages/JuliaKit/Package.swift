@@ -8,19 +8,22 @@ let package = Package(
         .library(name: "JuliaKit", targets: ["JuliaKit"]),
         .executable(name: "julia-smoke", targets: ["JuliaSmoke"])
     ],
+    dependencies: [
+        .package(url: "https://github.com/ml-explore/mlx-swift-lm", exact: "3.31.3"),
+        .package(url: "https://github.com/ml-explore/mlx-swift", exact: "0.31.3"),
+        .package(url: "https://github.com/huggingface/swift-transformers", exact: "1.3.0")
+    ],
     targets: [
-        .binaryTarget(
-            name: "LlamaFramework",
-            url: "https://github.com/ggml-org/llama.cpp/releases/download/b11026/llama-b11026-xcframework.zip",
-            checksum: "264fbf2acd7ad1d7bf565cf4bf5b04ffad18172832304de7360516714cec375c"
-        ),
-        .target(name: "JuliaKit", dependencies: ["LlamaFramework"], linkerSettings: [
+        .target(name: "JuliaKit", dependencies: [
+            .product(name: "MLX", package: "mlx-swift"),
+            .product(name: "MLXLLM", package: "mlx-swift-lm"),
+            .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+            .product(name: "Tokenizers", package: "swift-transformers")
+        ], linkerSettings: [
             .linkedFramework("EventKit"), .linkedFramework("Contacts"),
             .linkedFramework("PDFKit"), .linkedFramework("Vision")
         ]),
         .executableTarget(name: "JuliaSmoke", dependencies: ["JuliaKit"]),
-        .testTarget(name: "JuliaKitTests", dependencies: ["JuliaKit"], linkerSettings: [
-            .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@loader_path/../../.."])
-        ])
+        .testTarget(name: "JuliaKitTests", dependencies: ["JuliaKit"])
     ]
 )

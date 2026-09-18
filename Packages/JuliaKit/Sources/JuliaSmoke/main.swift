@@ -71,10 +71,14 @@ private actor DataCheckTools: ToolExecuting {
         }
         let store = ModelStore()
         let path = try await store.prepare { print($0.message) }
-        let runtime = LlamaRuntime()
+        let runtime = MLXRuntime()
         try await runtime.load(url: path)
+        if CommandLine.arguments.contains("--benchmark") {
+            try await ModelBenchmark.run(runtime: runtime)
+            return
+        }
         if CommandLine.arguments.contains("--check-model") {
-            // Exercise the app's exact runtime and grammar without executing tools.
+            // Exercise the app's exact runtime and action parser without executing tools.
             let generation = try await runtime.generate(messages: [
                 .init(role: "system", content: AssistantHarness.systemPrompt()),
                 .init(role: "user", content: "What is 2 + 2? Answer with just the number.")
