@@ -6,6 +6,10 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+        A11111111111111111111111 /* JuliaKit in Frameworks */ = {isa = PBXBuildFile; productRef = A22222222222222222222222 /* JuliaKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* julia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = julia.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -22,6 +26,7 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+                A11111111111111111111111 /* JuliaKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -59,6 +64,7 @@
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* julia */,
 			);
+			packageProductDependencies = (A22222222222222222222222 /* JuliaKit */,);
 			name = julia;
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* julia.app */;
@@ -90,6 +96,7 @@
 			minimizedProjectReferenceProxies = 1;
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
+			packageReferences = (A33333333333333333333333 /* JuliaKit */,);
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
@@ -172,7 +179,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -236,7 +243,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PROJECT_UNIQUE_VALUE = DXZM4N9U;
@@ -253,7 +260,19 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N8K96VJAHS;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
+                ENABLE_HARDENED_RUNTIME = YES;
+                CODE_SIGN_ENTITLEMENTS = Configuration/Julia.entitlements;
+                INFOPLIST_KEY_LSUIElement = YES;
+                INFOPLIST_KEY_NSAppleEventsUsageDescription = "Julia uses app commands to carry out your requests in Mail, Notes, and iWork.";
+                INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Julia reads your calendars when you ask about events.";
+                INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Julia reads and manages reminders at your request.";
+                INFOPLIST_KEY_NSContactsUsageDescription = "Julia finds contact details when you ask.";
+                INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Julia reads and manages Desktop files at your request.";
+                INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Julia reads and manages Documents files at your request.";
+                INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Julia reads and manages Downloads files at your request.";
+                INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Julia reads and manages files on network volumes at your request.";
+                INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Julia reads and manages files on external drives at your request.";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -273,11 +292,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:rfc1034identifier)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -291,7 +310,19 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N8K96VJAHS;
-				ENABLE_APP_SANDBOX = YES;
+				ENABLE_APP_SANDBOX = NO;
+                ENABLE_HARDENED_RUNTIME = YES;
+                CODE_SIGN_ENTITLEMENTS = Configuration/Julia.entitlements;
+                INFOPLIST_KEY_LSUIElement = YES;
+                INFOPLIST_KEY_NSAppleEventsUsageDescription = "Julia uses app commands to carry out your requests in Mail, Notes, and iWork.";
+                INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Julia reads your calendars when you ask about events.";
+                INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Julia reads and manages reminders at your request.";
+                INFOPLIST_KEY_NSContactsUsageDescription = "Julia finds contact details when you ask.";
+                INFOPLIST_KEY_NSDesktopFolderUsageDescription = "Julia reads and manages Desktop files at your request.";
+                INFOPLIST_KEY_NSDocumentsFolderUsageDescription = "Julia reads and manages Documents files at your request.";
+                INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Julia reads and manages Downloads files at your request.";
+                INFOPLIST_KEY_NSNetworkVolumesUsageDescription = "Julia reads and manages files on network volumes at your request.";
+                INFOPLIST_KEY_NSRemovableVolumesUsageDescription = "Julia reads and manages files on external drives at your request.";
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -311,11 +342,11 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:rfc1034identifier)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
+				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -324,6 +355,13 @@
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
+
+/* Begin XCLocalSwiftPackageReference section */
+        A33333333333333333333333 /* JuliaKit */ = {isa = XCLocalSwiftPackageReference; relativePath = Packages/JuliaKit; };
+/* End XCLocalSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+        A22222222222222222222222 /* JuliaKit */ = {isa = XCSwiftPackageProductDependency; productName = JuliaKit; };
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCConfigurationList section */
 		000000000000000010000000 /* Build configuration list for PBXProject "julia" */ = {
