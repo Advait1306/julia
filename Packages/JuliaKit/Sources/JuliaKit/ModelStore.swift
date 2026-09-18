@@ -8,50 +8,40 @@ public struct ModelProgress: Sendable {
 }
 
 public actor ModelStore {
-    public static let modelName = "qwen3.5:0.8b"
-    private struct Layer: Codable { let mediaType: String; let digest: String; let size: Int64 }
-    private struct Manifest: Codable { let config: Layer; let layers: [Layer] }
+    public static let modelName = "LiquidAI/LFM2.5-350M-GGUF:Q8_0"
+    public static let displayName = "LFM2.5 350M"
+    // Pin both revision and checksum so cached/offline launches use the same weights.
+    private static let revision = "9969000761ce34de907bf20017cbfc3d52d6eaf9"
+    private static let filename = "LFM2.5-350M-Q8_0.gguf"
+    private static let modelSize: Int64 = 379_217_632
+    private static let modelSHA256 = "be036a757295e550098b85e13f6af2735d0fa73b41e1156a40c7d8e8e32a5766"
+    private static let licenseSHA256 = "5188f2b355da20647257a3156db5834c794e5fb5e6d8dc4d4cdbb3180e75b85b"
     private let directory: URL
     public init(directory: URL = JuliaPaths.modelDirectory) { self.directory = directory }
 
     public func prepare(progress: @escaping @Sendable (ModelProgress) -> Void) async throws -> URL {
         try JuliaPaths.create(directory)
         let file = directory.appendingPathComponent("model.gguf")
-        let receipt = directory.appendingPathComponent("manifest.json")
-        var manifest: Manifest
-        if let data = try? Data(contentsOf: receipt), let saved = try? JSONDecoder().decode(Manifest.self, from: data) {
-            manifest = saved
-        } else {
-            progress(.init("Finding Qwen 3.5 0.8B…"))
-            let data = try await fetch("manifests/0.8b")
-            manifest = try JSONDecoder().decode(Manifest.self, from: data)
-            // Save only after validating the layout below.
-        }
-        let models = manifest.layers.filter { $0.mediaType == "application/vnd.ollama.image.model" }
-        guard models.count == 1, let model = models.first, model.size > 0, model.size < 2_000_000_000 else {
-            throw JuliaError("This Qwen release has an unsupported model layout.")
-        }
-        try checkDigest(model.digest)
         progress(.init("Verifying model…"))
         if FileManager.default.fileExists(atPath: file.path) {
-            if try await digest(file) == String(model.digest.dropFirst(7)) {
-                try await saveMetadata(manifest, to: receipt)
+            if try await digest(file) == Self.modelSHA256 {
+                try await saveMetadata()
                 return file
             }
             try FileManager.default.removeItem(at: file)
         }
-        progress(.init("Downloading Qwen 3.5 0.8B", fraction: 0))
+        progress(.init("Downloading \(Self.displayName)", fraction: 0))
         let delegate = DownloadProgress { written, expected in
-            progress(.init("Downloading Qwen 3.5 0.8B", fraction: Double(written) / Double(max(expected, model.size))))
+            progress(.init("Downloading \(Self.displayName)", fraction: Double(written) / Double(max(expected, Self.modelSize))))
         }
-        let request = URLRequest(url: try registryURL("blobs/\(model.digest)"), timeoutInterval: 3600)
+        let request = URLRequest(url: Self.downloadURL(Self.filename), timeoutInterval: 3600)
         let (temporary, response) = try await URLSession.shared.download(for: request, delegate: delegate)
         defer { try? FileManager.default.removeItem(at: temporary) }
         try validate(response)
         let attrs = try FileManager.default.attributesOfItem(atPath: temporary.path)
-        guard (attrs[.size] as? NSNumber)?.int64Value == model.size else { throw JuliaError("The model download is incomplete. Retry to download again.") }
+        guard (attrs[.size] as? NSNumber)?.int64Value == Self.modelSize else { throw JuliaError("The model download is incomplete. Retry to download again.") }
         progress(.init("Verifying model…"))
-        guard try await digest(temporary) == String(model.digest.dropFirst(7)) else { throw JuliaError("Model checksum failed. Retry to download a verified copy.") }
+        guard try await digest(temporary) == Self.modelSHA256 else { throw JuliaError("Model checksum failed. Retry to download a verified copy.") }
         let h = try FileHandle(forReadingFrom: temporary); let magic = try h.read(upToCount: 4); try h.close()
         guard magic == Data("GGUF".utf8) else { throw JuliaError("The downloaded model is not GGUF.") }
         try Task.checkCancellation()
@@ -61,42 +51,28 @@ public actor ModelStore {
         try FileManager.default.copyItem(at: temporary, to: staging)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: staging.path)
         try FileManager.default.moveItem(at: staging, to: file)
-        try await saveMetadata(manifest, to: receipt)
+        try await saveMetadata()
         return file
     }
-    private func saveMetadata(_ manifest: Manifest, to receipt: URL) async throws {
-        // Offline launches use the verified receipt and never contact the registry.
-        if FileManager.default.fileExists(atPath: receipt.path) { return }
-        for layer in [manifest.config] + manifest.layers.filter({ $0.mediaType != "application/vnd.ollama.image.model" }) {
-            try checkDigest(layer.digest)
-            guard layer.size < 1_000_000 else { throw JuliaError("Unexpected model metadata size.") }
-            let bytes = try await fetch("blobs/\(layer.digest)")
-            guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == String(layer.digest.dropFirst(7)) else {
-                throw JuliaError("Model metadata checksum failed.")
+    private func saveMetadata() async throws {
+        let license = directory.appendingPathComponent("LICENSE.txt")
+        if (try? await digest(license)) != Self.licenseSHA256 {
+            let (bytes, response) = try await URLSession.shared.data(from: Self.downloadURL("LICENSE"))
+            try validate(response)
+            guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == Self.licenseSHA256 else {
+                throw JuliaError("Model license checksum failed.")
             }
-            let name: String
-            switch layer.mediaType {
-            case "application/vnd.ollama.image.license": name = "LICENSE.txt"
-            case "application/vnd.ollama.image.params": name = "parameters.json"
-            case "application/vnd.ollama.image.template": name = "ollama-template.txt"
-            default: name = "config.json"
-            }
-            try bytes.write(to: directory.appendingPathComponent(name), options: .atomic)
+            try bytes.write(to: license, options: .atomic)
         }
-        try JSONEncoder().encode(manifest).write(to: receipt, options: .atomic)
+        let receipt = ["model": Self.modelName, "revision": Self.revision,
+                       "filename": Self.filename, "sha256": Self.modelSHA256]
+        try JSONEncoder().encode(receipt).write(to: directory.appendingPathComponent("manifest.json"), options: .atomic)
     }
-    private func fetch(_ path: String) async throws -> Data {
-        let (data, response) = try await URLSession.shared.data(from: registryURL(path))
-        try validate(response); return data
-    }
-    private func registryURL(_ path: String) throws -> URL {
-        guard let url = URL(string: "https://registry.ollama.ai/v2/library/qwen3.5/\(path)") else { throw JuliaError("Invalid registry URL.") }; return url
+    private static func downloadURL(_ filename: String) -> URL {
+        URL(string: "https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF/resolve/\(revision)/\(filename)")!
     }
     private func validate(_ response: URLResponse) throws {
-        guard let h = response as? HTTPURLResponse, (200...299).contains(h.statusCode) else { throw JuliaError("Ollama registry download failed. Check your connection and retry.") }
-    }
-    private func checkDigest(_ value: String) throws {
-        guard value.range(of: "^sha256:[0-9a-f]{64}$", options: .regularExpression) != nil else { throw JuliaError("Invalid registry digest.") }
+        guard let h = response as? HTTPURLResponse, (200...299).contains(h.statusCode) else { throw JuliaError("Hugging Face download failed. Check your connection and retry.") }
     }
     private func digest(_ file: URL) async throws -> String {
         let task = Task.detached(priority: .utility) {

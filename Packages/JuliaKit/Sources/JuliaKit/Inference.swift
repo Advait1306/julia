@@ -43,11 +43,10 @@ public actor LlamaRuntime: ModelGenerating {
     private var model: OpaquePointer?
     private var context: OpaquePointer?
     private var vocabulary: OpaquePointer?
-    public static let contextSize = 51_200
+    public static let contextSize = 32_768
     public static let maxOutputTokens = 768
     public static let maxPromptTokens = contextSize - maxOutputTokens - 256
-    // Fixed policy for every generation, including continuations after tool results.
-    // This renders Qwen's enable_thinking=false template branch below.
+    // LFM2.5-350M uses direct answers with JSON constrained from the first token.
     public static let thinkingEnabled = false
     public init() {}
     deinit {
@@ -56,11 +55,10 @@ public actor LlamaRuntime: ModelGenerating {
     }
     public func load(url: URL) throws {
         if model != nil { return }
-        let compatibleURL = try QwenGGUF.prepare(url)
         llama_backend_init()
         var parameters = llama_model_default_params()
         parameters.n_gpu_layers = 99
-        guard let loaded = llama_model_load_from_file(compatibleURL.path, parameters) else { throw JuliaError("Could not load Qwen 3.5 0.8B. See the runtime log.") }
+        guard let loaded = llama_model_load_from_file(url.path, parameters) else { throw JuliaError("Could not load \(ModelStore.displayName). See the runtime log.") }
         var settings = llama_context_default_params()
         settings.n_ctx = UInt32(Self.contextSize)
         settings.n_batch = 512; settings.n_ubatch = 512
@@ -73,15 +71,12 @@ public actor LlamaRuntime: ModelGenerating {
     }
     public func tokenCount(messages: [ModelMessage]) throws -> Int { try tokenize(Self.prompt(messages)).count }
 
-    /// Qwen 3.5's enable_thinking=false branch uses an EMPTY, CLOSED think block.
-    /// Removing that block would allow the model to resume its default reasoning.
-    /// The JSON grammar is also active from the very first generated token.
+    /// LFM's text chat template includes BOS and a plain assistant generation prefix.
+    /// Tool calls remain JSON content, as requested by the harness system prompt.
     public static func prompt(_ messages: [ModelMessage]) -> String {
-        messages.map {
-            let prefix = $0.role == "assistant" ? "<think>\n\n</think>\n\n" : ""
-            return "<|im_start|>\($0.role)\n\(prefix)\(escapeSpecialTokens($0.content))<|im_end|>\n"
-        }.joined()
-            + "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        "<|startoftext|>" + messages.map {
+            "<|im_start|>\($0.role)\n\(escapeSpecialTokens($0.content))<|im_end|>\n"
+        }.joined() + "<|im_start|>assistant\n"
     }
     private static func escapeSpecialTokens(_ content: String) -> String {
         // App data and user content must not inject ChatML message boundaries.
@@ -91,7 +86,7 @@ public actor LlamaRuntime: ModelGenerating {
         guard let vocabulary else { throw JuliaError("The model is not loaded yet.") }
         let bytes = text.utf8.count
         var tokens = [llama_token](repeating: 0, count: bytes + 16)
-        let count = llama_tokenize(vocabulary, text, Int32(bytes), &tokens, Int32(tokens.count), true, true)
+        let count = llama_tokenize(vocabulary, text, Int32(bytes), &tokens, Int32(tokens.count), false, true)
         guard count >= 0 else { throw JuliaError("Tokenization failed.") }
         return Array(tokens.prefix(Int(count)))
     }

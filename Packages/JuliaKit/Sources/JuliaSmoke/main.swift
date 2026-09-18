@@ -73,6 +73,19 @@ private actor DataCheckTools: ToolExecuting {
         let path = try await store.prepare { print($0.message) }
         let runtime = LlamaRuntime()
         try await runtime.load(url: path)
+        if CommandLine.arguments.contains("--check-model") {
+            // Exercise the app's exact runtime and grammar without executing tools.
+            let generation = try await runtime.generate(messages: [
+                .init(role: "system", content: AssistantHarness.systemPrompt()),
+                .init(role: "user", content: "What is 2 + 2? Answer with just the number.")
+            ])
+            guard try ModelAction.parse(generation.text) == .answer("4"), generation.stopReason == "complete" else {
+                throw JuliaError("Model smoke check failed: \(generation.text)")
+            }
+            print("PASS: \(ModelStore.modelName) → \(generation.text)")
+            print("\(generation.promptTokens) prompt tokens, \(generation.generatedTokens) output tokens, \(generation.duration)s")
+            return
+        }
         if CommandLine.arguments.contains("--check-data") {
             let cases: [(String, String, String?, Bool)] = [
                 ("What's vivek's contact?", "contacts.search", "Vivek", false),

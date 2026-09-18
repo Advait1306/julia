@@ -46,7 +46,7 @@ import JuliaKit
                 let path = try await store.prepare { [weak self] progress in
                     Task { @MainActor [weak self] in self?.status = progress.message; self?.downloadProgress = progress.fraction }
                 }
-                status = "Loading Qwen into memory…"
+                status = "Loading \(ModelStore.displayName) into memory…"
                 trace?.record("model.load.begin", .object(["path": .string(path.path)]))
                 try await runtime.load(url: path)
                 ready = true; status = "Ready"

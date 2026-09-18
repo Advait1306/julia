@@ -67,12 +67,23 @@ final class HarnessTests: XCTestCase {
         XCTAssertEqual(next.last?.content, "Fresh command")
     }
 
-    func testFiftyThousandTokenPromptFitsConfiguredContext() async throws {
-        let model = ScriptedModel([#"{"answer":"Fits"}"#], promptTokens: 50_000)
+    func testMaximumPromptFitsConfiguredContext() async throws {
+        let model = ScriptedModel([#"{"answer":"Fits"}"#], promptTokens: LlamaRuntime.maxPromptTokens)
         let harness = AssistantHarness(model: model, tools: RecordingTools(), trace: try log())
         let answer = try await harness.run("Large request")
         XCTAssertEqual(answer, "Fits")
         XCTAssertLessThan(LlamaRuntime.maxPromptTokens + LlamaRuntime.maxOutputTokens, LlamaRuntime.contextSize)
+    }
+
+    func testOverBudgetPromptIsRejectedBeforeGeneration() async throws {
+        let model = ScriptedModel([], promptTokens: LlamaRuntime.maxPromptTokens + 1)
+        let harness = AssistantHarness(model: model, tools: RecordingTools(), trace: try log())
+        do {
+            _ = try await harness.run("Oversized request")
+            XCTFail("Expected context budget error")
+        } catch { XCTAssertTrue(error.localizedDescription.contains("too large for the context")) }
+        let requests = await model.requests
+        XCTAssertTrue(requests.isEmpty)
     }
 
     func testDirectCallWorksWithoutAnySkillRead() async throws {
@@ -153,7 +164,7 @@ final class HarnessTests: XCTestCase {
         XCTAssertEqual(prompt.components(separatedBy: "<|im_start|>").count - 1, 2)
     }
 
-    func testThinkingIsDisabledOnInitialAndToolContinuationPrompts() {
+    func testLFMTemplateOnInitialAndToolContinuationPrompts() {
         let initial = [ModelMessage(role: "user", content: "What is 2 + 2?")]
         let continued = initial + [
             .init(role: "assistant", content: #"{"tool":"system.info","arguments":{}}"#),
@@ -162,9 +173,11 @@ final class HarnessTests: XCTestCase {
         XCTAssertFalse(LlamaRuntime.thinkingEnabled)
         for messages in [initial, continued] {
             let prompt = LlamaRuntime.prompt(messages)
-            XCTAssertTrue(prompt.hasSuffix("<|im_start|>assistant\n<think>\n\n</think>\n\n"))
-            XCTAssertEqual(prompt.components(separatedBy: "<think>").count,
-                           prompt.components(separatedBy: "</think>").count)
+            XCTAssertTrue(prompt.hasPrefix("<|startoftext|><|im_start|>user\n"))
+            XCTAssertEqual(prompt.components(separatedBy: "<|startoftext|>").count - 1, 1)
+            XCTAssertTrue(prompt.hasSuffix("<|im_start|>assistant\n"))
+            XCTAssertFalse(prompt.contains("<think>"))
+            XCTAssertTrue(prompt.contains("<|im_start|>user\nWhat is 2 + 2?<|im_end|>\n"))
         }
     }
 

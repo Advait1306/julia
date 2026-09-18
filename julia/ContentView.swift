@@ -142,7 +142,7 @@ struct ContentView: View {
     private var footer: some View {
         HStack(spacing: 9) {
             Circle().fill(assistant.ready ? Color(red: 0.48, green: 0.73, blue: 0.59) : Palette.muted).frame(width: 5, height: 5)
-            Text("Qwen 3.5 0.8B").font(.system(size: 11, weight: .medium))
+            Text(ModelStore.displayName).font(.system(size: 11, weight: .medium))
             Text("Local").font(.system(size: 10)).foregroundStyle(Palette.muted)
             Spacer()
             Button { assistant.newConversation(); inputFocused = true } label: { Image(systemName: "plus") }
