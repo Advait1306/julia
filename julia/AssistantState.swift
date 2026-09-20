@@ -36,6 +36,7 @@ import JuliaKit
             startPreparation()
         } catch { self.error = "Cannot create trace log: \(error.localizedDescription)" }
     }
+    
     private func startPreparation() {
         guard !preparing else { return }
         preparing = true; error = nil
@@ -58,7 +59,9 @@ import JuliaKit
             }
         }
     }
+    
     func retryPreparation() { guard !busy else { return }; startPreparation() }
+    
     func submit() {
         let command = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty, !busy, let harness else { return }
@@ -81,11 +84,14 @@ import JuliaKit
             catch { self.error = error.localizedDescription; status = ready ? "Ready" : "Model setup failed" }
         }
     }
+    
     func cancel() { commandTask?.cancel(); status = "Stopping…" }
+    
     func newConversation() {
         guard !busy else { return }
         input = ""; answer = ""; lastCommand = ""; error = nil; usedApplications = []
         trace?.record("conversation.cleared")
     }
+    
     func revealLog() { if let trace { NSWorkspace.shared.activateFileViewerSelecting([trace.fileURL]) } }
 }

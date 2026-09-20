@@ -50,6 +50,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .juliaPanelOpened)) { _ in inputFocused = true }
         .onExitCommand { NSApp.keyWindow?.orderOut(nil) }
     }
+    
     private var suggestions: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
@@ -75,9 +76,11 @@ struct ContentView: View {
             }
         }.padding(18).frame(maxHeight: .infinity)
     }
+    
     private func suggestion(_ text: String, symbol: String, app: String) -> some View {
         SuggestionRow(text: text, symbol: symbol, application: app) { assistant.input = text; assistant.submit() }
     }
+    
     private var responseView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -110,6 +113,7 @@ struct ContentView: View {
             }.padding(27).frame(maxWidth: .infinity, alignment: .leading)
         }.frame(maxHeight: .infinity)
     }
+    
     private var traceView: some View {
         HStack(spacing: 0) {
             ScrollView {
@@ -135,10 +139,12 @@ struct ContentView: View {
             }
         }.frame(maxHeight: .infinity)
     }
+    
     private func pretty(_ value: JSONValue) -> String {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         return (try? String(decoding: encoder.encode(value), as: UTF8.self)) ?? value.json
     }
+    
     private var footer: some View {
         HStack(spacing: 9) {
             Circle().fill(assistant.ready ? Color(red: 0.48, green: 0.73, blue: 0.59) : Palette.muted).frame(width: 5, height: 5)

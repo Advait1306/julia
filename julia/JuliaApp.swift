@@ -19,6 +19,7 @@ final class CommandPanel: NSPanel {
     private var state: AssistantState?
     private var hotKey: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
+    
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         let state = AssistantState(); self.state = state
@@ -48,6 +49,7 @@ final class CommandPanel: NSPanel {
         RegisterEventHotKey(UInt32(kVK_Space), UInt32(optionKey), id, GetApplicationEventTarget(), 0, &hotKey)
         showPanel()
     }
+    
     @objc func showPanel() {
         guard let panel else { return }
         if let screen = NSScreen.main {
@@ -57,8 +59,11 @@ final class CommandPanel: NSPanel {
         NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .juliaPanelOpened, object: nil)
     }
+    
     @objc func showLog() { state?.revealLog() }
+    
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showPanel(); return true }
+    
     func applicationWillTerminate(_ notification: Notification) {
         NotificationCenter.default.removeObserver(self)
         if let hotKey { UnregisterEventHotKey(hotKey) }
