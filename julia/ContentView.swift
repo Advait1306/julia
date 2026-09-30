@@ -5,6 +5,7 @@ struct ContentView: View {
     
     @StateObject private var wifiManager = Wifi()
     @StateObject private var bluetoothManager = Bluetooth()
+    @StateObject private var playbackManager = Playback()
     @EnvironmentObject private var audioManager: Audio
     private var jev = Jev(apiKey: ProcessInfo.processInfo.environment["JEV_API_KEY"]!)
     
@@ -19,6 +20,15 @@ struct ContentView: View {
             Text("Bluetooth")
             Button(action: toggleBluetooth) {
                 Text("\(bluetoothManager.isEnabled ? "Disable" : "Enable")")
+            }
+            Text("Playback")
+            HStack {
+                Button("Play", systemImage: "play.fill") {
+                    playbackManager.play()
+                }
+                Button("Pause", systemImage: "pause.fill") {
+                    playbackManager.pause()
+                }
             }
             Text("AI")
             TextField("Send a prompt to jev", text: $jevPrompt)
@@ -80,6 +90,11 @@ struct ContentView: View {
                 case .unchanged: break
                 case .mute: audioManager.mute()
                 case .unmute: audioManager.unmute()
+                }
+                switch response.playback {
+                case .unchanged: break
+                case .play: playbackManager.play()
+                case .pause: playbackManager.pause()
                 }
             } catch {
                 print("Jev: \(error.localizedDescription)")
