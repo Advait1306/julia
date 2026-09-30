@@ -11,11 +11,18 @@ nonisolated struct SettingsState: Encodable, Sendable {
     var wifi: Bool
     var bluetooth: Bool
     var audio: AudioState
+    var focus: FocusState
 
     struct AudioState: Encodable, Sendable {
         let devices: [AudioDevice]
         let selectedDeviceID: UInt32?
         let isMuted: Bool?
+    }
+
+    struct FocusState: Encodable, Sendable {
+        let modes: [FocusMode]?
+        let isActive: Bool?
+        let currentModeID: String?
     }
 }
 
@@ -28,18 +35,25 @@ nonisolated struct SettingsDecision: Sendable {
         case unchanged, play, pause
     }
 
+    enum FocusChoice: Sendable {
+        case unchanged, off, mode(String)
+    }
+
     let wifi: Bool
     let bluetooth: Bool
     let audioMute: MuteAction
     let audioDeviceID: UInt32?
     let playback: PlaybackAction
+    let focus: FocusChoice
 }
 
 final class Jev {
     private let apiKey: String
+    private let session: Session
 
-    init(apiKey: String) {
+    init(apiKey: String, session: Session = .default) {
         self.apiKey = apiKey
+        self.session = session
     }
 
     func evaluate(prompt: String, state: SettingsState) async throws -> SettingsDecision {
@@ -48,11 +62,30 @@ final class Jev {
             deviceChoices[String(device.id)] = device.name
         }
 
+        var focusChoices = ["unchanged": "Keep the current Focus", "off": "No Focus"]
+        for mode in state.focus.modes ?? [] {
+            focusChoices[mode.id] = mode.name
+        }
+
         let parameters = EvaluationRequest(
             state: .init(prompt: prompt, settings: state),
             questions: [
                 "wifi": Question(setting: "Wi-Fi", key: "wifi"),
                 "bluetooth": Question(setting: "Bluetooth", key: "bluetooth"),
+                "focusMode": Question(
+                    instructions: """
+                        Which Focus mode does the user's `prompt` request?
+                        Available modes are in `settings.focus.modes`; the current mode ID is
+                        `settings.focus.currentModeID`. `settings.focus.isActive` is true when
+                        Focus is active and false when off. Absent fields mean unavailable;
+                        an absent currentModeID does not mean off. Never infer a current mode.
+                        Choose unchanged unless the prompt requests a Focus change.
+                        Choose off to disable Focus, or a listed mode ID only when the prompt
+                        identifies an available mode unambiguously. Never invent a mode ID.
+                        For a toggle, use the known current state; otherwise choose unchanged.
+                        """,
+                    criteria: focusChoices
+                ),
                 "audioMute": Question(
                     instructions: """
                         Should audio be muted or unmuted after following the user's `prompt`?
@@ -92,7 +125,7 @@ final class Jev {
             ]
         )
 
-        let response = try await AF.request(
+        let response = try await session.request(
             "https://api.typesafe.ai/v1/systemone",
             method: .post,
             parameters: parameters,
@@ -116,12 +149,26 @@ final class Jev {
             deviceID = id
         }
 
+        let focusChoice: SettingsDecision.FocusChoice
+        switch response.answers.focusMode.choice {
+        case "unchanged": focusChoice = .unchanged
+        case "off": focusChoice = .off
+        case let id:
+            guard state.focus.modes?.contains(where: { $0.id == id }) == true else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [], debugDescription: "Jev selected an unavailable Focus mode."
+                ))
+            }
+            focusChoice = .mode(id)
+        }
+
         return SettingsDecision(
             wifi: response.answers.wifi.choice == .on,
             bluetooth: response.answers.bluetooth.choice == .on,
             audioMute: response.answers.audioMute.choice,
             audioDeviceID: deviceID,
-            playback: response.answers.playback.choice
+            playback: response.answers.playback.choice,
+            focus: focusChoice
         )
     }
 }
@@ -173,6 +220,7 @@ private nonisolated struct EvaluationResponse: Decodable, Sendable {
         let audioMute: Answer<SettingsDecision.MuteAction>
         let audioDevice: Answer<String>
         let playback: Answer<SettingsDecision.PlaybackAction>
+        let focusMode: Answer<String>
     }
 
     let answers: Answers
