@@ -5,6 +5,7 @@ struct ContentView: View {
     
     @StateObject private var wifiManager = Wifi()
     @StateObject private var bluetoothManager = Bluetooth()
+    @EnvironmentObject private var audioManager: Audio
     private var jev = Jev(apiKey: ProcessInfo.processInfo.environment["JEV_API_KEY"]!)
     
     @State private var jevPrompt: String = ""
@@ -55,14 +56,33 @@ struct ContentView: View {
     
     func runJev(prompt: String) {
         Task {
-            let response = try? await jev.evaluate(prompt: prompt, state: SettingsState(wifi: wifiManager.isEnabled, bluetooth: bluetoothManager.isEnabled))
-            
-            if response?.wifi != nil && response?.wifi != wifiManager.isEnabled {
-                toggleWifi()
-            }
-            
-            if response?.bluetooth != nil && response?.bluetooth != bluetoothManager.isEnabled {
-                toggleBluetooth()
+            do {
+                let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
+                    wifi: wifiManager.isEnabled,
+                    bluetooth: bluetoothManager.isEnabled,
+                    audio: .init(
+                        devices: audioManager.devices,
+                        selectedDeviceID: audioManager.selectedDeviceID,
+                        isMuted: audioManager.isMuted
+                    )
+                ))
+
+                if response.wifi != wifiManager.isEnabled {
+                    toggleWifi()
+                }
+                if response.bluetooth != bluetoothManager.isEnabled {
+                    toggleBluetooth()
+                }
+                if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
+                    try audioManager.switchDevice(to: id)
+                }
+                switch response.audioMute {
+                case .unchanged: break
+                case .mute: audioManager.mute()
+                case .unmute: audioManager.unmute()
+                }
+            } catch {
+                print("Jev: \(error.localizedDescription)")
             }
         }
         
@@ -71,4 +91,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .environmentObject(Audio())
 }
