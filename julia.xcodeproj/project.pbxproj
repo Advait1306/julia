@@ -9,11 +9,13 @@
 /* Begin PBXBuildFile section */
 		92B906E2306B59DE003A4497 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 92B906E1306B59DE003A4497 /* Alamofire */; };
 		92BC60653065268A001F8E76 /* IOBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92BC60643065268A001F8E76 /* IOBluetooth.framework */; platformFilters = (macos, ); };
+		92BC60673065268A001F8E76 /* MediaRemote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92BC60663065268A001F8E76 /* MediaRemote.framework */; platformFilters = (macos, ); };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* julia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = julia.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		92BC60643065268A001F8E76 /* IOBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOBluetooth.framework; path = System/Library/Frameworks/IOBluetooth.framework; sourceTree = SDKROOT; };
+		92BC60663065268A001F8E76 /* MediaRemote.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaRemote.framework; path = System/Library/PrivateFrameworks/MediaRemote.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -42,6 +44,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				92BC60653065268A001F8E76 /* IOBluetooth.framework in Frameworks */,
+				92BC60673065268A001F8E76 /* MediaRemote.framework in Frameworks */,
 				92B906E2306B59DE003A4497 /* Alamofire in Frameworks */,
 			);
 		};
@@ -69,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				92BC60643065268A001F8E76 /* IOBluetooth.framework */,
+				92BC60663065268A001F8E76 /* MediaRemote.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -292,6 +296,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
+				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"$(SDKROOT)/System/Library/PrivateFrameworks",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = julia/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Show and change bluetooth status";
@@ -331,6 +339,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
+				"FRAMEWORK_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"$(SDKROOT)/System/Library/PrivateFrameworks",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = julia/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Show and change bluetooth status";

@@ -24,10 +24,15 @@ nonisolated struct SettingsDecision: Sendable {
         case unchanged, mute, unmute
     }
 
+    enum PlaybackAction: String, Decodable, Sendable {
+        case unchanged, play, pause
+    }
+
     let wifi: Bool
     let bluetooth: Bool
     let audioMute: MuteAction
     let audioDeviceID: UInt32?
+    let playback: PlaybackAction
 }
 
 final class Jev {
@@ -58,6 +63,21 @@ final class Jev {
                         The action applies after any requested output device switch.
                         """,
                     criteria: ["unchanged": "Leave mute unchanged", "mute": "Mute", "unmute": "Unmute"]
+                ),
+                "playback": Question(
+                    instructions: """
+                        Which playback action does the user's `prompt` request for the current
+                        system Now Playing app? Choose unchanged unless the prompt explicitly
+                        requests playing/resuming or pausing media playback.
+                        Playing/pausing is separate from muting/unmuting audio.
+                        Playback state is unknown: never infer it from audio mute state.
+                        Use play for play/resume and pause for pause.
+                        """,
+                    criteria: [
+                        "unchanged": "Leave playback unchanged",
+                        "play": "Play or resume the current media",
+                        "pause": "Pause the current media"
+                    ]
                 ),
                 "audioDevice": Question(
                     instructions: """
@@ -100,7 +120,8 @@ final class Jev {
             wifi: response.answers.wifi.choice == .on,
             bluetooth: response.answers.bluetooth.choice == .on,
             audioMute: response.answers.audioMute.choice,
-            audioDeviceID: deviceID
+            audioDeviceID: deviceID,
+            playback: response.answers.playback.choice
         )
     }
 }
@@ -151,6 +172,7 @@ private nonisolated struct EvaluationResponse: Decodable, Sendable {
         let bluetooth: Answer<PowerState>
         let audioMute: Answer<SettingsDecision.MuteAction>
         let audioDevice: Answer<String>
+        let playback: Answer<SettingsDecision.PlaybackAction>
     }
 
     let answers: Answers
