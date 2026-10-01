@@ -2,6 +2,9 @@ import Combine
 import Darwin
 import Foundation
 
+// NOTE: FocusKit in an unstable Kit made for testing the focus features of Julia.
+// While it's API will remain stable, it's underlying implementation might change based on future discoveries.
+
 /**
  A reusable interface to the current user's macOS Focus database.
 
