@@ -2,43 +2,43 @@ import Combine
 import Darwin
 import Foundation
 
-// NOTE: FocusKit in an unstable Kit made for testing the focus features of Julia.
-// While it's API will remain stable, it's underlying implementation might change based on future discoveries.
+// NOTE: FocusKit's API is stable, but its underlying implementation is experimental
+// and may change based on future discoveries.
 
 /**
- A reusable interface to the current user's macOS Focus database.
+ Reads, observes, and changes the current user's macOS Focus configuration.
 
- FocusKit owns the system details: JSON decoding, assertion writes, filesystem
- observation, and restarting donotdisturbd. The settings layer owns published
- UI state, sorting, and logging. The API and file-change notifications run on
- the main actor, so the settings layer can refresh its state directly.
+ All APIs and change notifications run on the main actor. FocusKit manages
+ database access and daemon control internally; initialization takes no
+ configuration parameters. The hosting application needs Full Disk Access
+ to read and write the protected database files.
+
+ API OVERVIEW
 
  ```text
- UI / Jev
-    |
-    v
- settings/Focus                  Publishes modes, state, and isUpdating
-    |
-    | readModes(), readState(), switchMode(to:), disable(), changes
-    v
- sdk/FocusKit
-    |
-    +--> ~/Library/DoNotDisturb/DB/ModeConfigurations.json
-    |       Configured mode IDs, names, and visibility
-    |
-    +--> ~/Library/DoNotDisturb/DB/Assertions.json
-    |       Active assertions, history, and database header
-    |
-    +--> donotdisturbd             Reloads the assertions after a write
+ FocusKit()
+     |
+     +--> readModes() -----------> [FocusMode] containing mode IDs and names
+     |
+     +--> readState() -----------> State containing isActive and currentModeID
+     |
+     +--> changes ---------------> AnyPublisher<Void, Never>
+     |                            Signals that a fresh read may be needed
+     |
+     +--> switchMode(to: id) ----> Select a configured mode (async, throwing)
+     |
+     +--> disable() ------------> Turn Focus off (async, throwing)
  ```
+
+ Reads and changes throw on failure. FocusKit does not log errors or convert
+ failed reads into default values. The modes returned by `readModes()` are
+ unsorted; each entry has an identifier and a display name.
 
  READING MODES AND STATE
 
- Initialization starts file observation; it does not read or cache a snapshot.
- Consumers subscribe to `changes` and perform their own initial reads. Each
- read decodes the current file and requires exactly one database store.
- `readModes()` returns modes whose visibility is 0. Sorting belongs to the
- consumer. `readState()` examines the distinct mode IDs in active assertions:
+ Each read decodes the current database contents, without caching a snapshot.
+ `readModes()` returns configured modes whose visibility is 0. `readState()`
+ examines the distinct mode IDs in active assertions:
 
  ```text
  Distinct mode IDs     isActive     currentModeID
@@ -49,18 +49,19 @@ import Foundation
  ```
 
  Several assertions can refer to the same mode. Their order does not identify
- the selected mode when different IDs coexist, so we leave that state unknown.
- File access and decoding errors throw; the settings layer clears the affected
- published values and logs the error. An unreadable file is not treated as Off.
+ the selected mode when different IDs coexist, so both state fields are nil
+ in that case. An unreadable file throws instead of reporting Off. Both reads
+ require exactly one database store.
 
  OBSERVING CHANGES WITHOUT POLLING
 
- `changes` is an invalidation signal, not a stream of cached state. It has no
- initial or replayed value; subscribers call the read APIs to get a snapshot.
+ Initialization starts filesystem observation. `changes` emits an invalidation
+ signal, not a snapshot. It has no initial or replayed value. Subscribe first,
+ then call the read APIs for an initial snapshot; read again on notifications.
 
  ```text
- DB directory ----+                Catches atomic file replacements
- Modes file ------+                Catches in-place writes
+ DB directory ----+                Detects atomic file replacements
+ Modes file ------+                Detects in-place writes
  Assertions file -+
                   |
                   v
@@ -73,18 +74,19 @@ import Foundation
          changes emits ()
                   |
                   v
-         Subscriber rereads modes and state
+         readModes() / readState() return a fresh snapshot
  ```
 
- Inaccessible paths are skipped rather than retried on a timer. Watchers are
+ Inaccessible paths are skipped rather than retried on a timer. Notifications
+ cannot be guaranteed for paths that could not be watched. Watchers are
  cancelled on teardown, and their cancellation handlers close the descriptors.
 
- SWITCHING OR TURNING FOCUS OFF
+ CHANGING THE SELECTED MODE
 
- Both actions use `setMode`: a mode ID means one new user-action assertion;
- nil means an empty active assertion list. These replace the entire active
- list, including assertions previously created by other clients. History and
- other database fields are preserved.
+ `switchMode(to:)` revalidates the ID against the configured visible modes.
+ `disable()` requests no active assertions. Both replace the entire active
+ assertion list, including assertions previously created by other clients.
+ History and other database fields are preserved.
 
  ```text
  switchMode(to: id) / disable()
@@ -126,19 +128,20 @@ import Foundation
              Throw (a rollback failure can also propagate)
  ```
 
- Restarting finds the current user's daemon processes, sends SIGTERM, waits
- for process-exit events, then calls a regular launchctl kickstart. The exit
- wait has a single five-second timeout. There is no process polling, and we
- avoid kickstart -k because SIP blocks that operation on the target Mac.
+ IMPLEMENTATION AND LIMITS
 
- Verification checks the resulting database assertions; it does not query the
- daemon's live selection through a private framework. The rollback byte check
- avoids replacing a newer update that we observe after our write; it is not a
- lock against other processes changing the database.
+ FocusKit uses ModeConfigurations.json and Assertions.json under the current
+ user's ~/Library/DoNotDisturb/DB directory. The format is private to macOS;
+ writes reject assertion header versions other than 8.
 
- Julia needs Full Disk Access to use these protected files. The directory and
- reload implementation are internal, and the database format is private to
- macOS. Writes deliberately reject assertion header versions other than 8.
+ Restarting finds the current user's donotdisturbd processes, sends SIGTERM,
+ waits for process-exit events, then calls a regular launchctl kickstart. The
+ exit wait has a single five-second timeout. There is no process polling.
+
+ Verification checks the resulting database assertions, rather than querying
+ the daemon's live selection. The rollback byte check avoids replacing a
+ newer update observed after the write; it is not a lock against other
+ processes changing the database.
  */
 @MainActor
 final class FocusKit {
