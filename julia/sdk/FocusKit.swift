@@ -2,6 +2,141 @@ import Combine
 import Darwin
 import Foundation
 
+/**
+ A reusable interface to the current user's macOS Focus database.
+
+ FocusKit owns the system details: JSON decoding, assertion writes, filesystem
+ observation, and restarting donotdisturbd. The settings layer owns published
+ UI state, sorting, and logging. The API and file-change notifications run on
+ the main actor, so the settings layer can refresh its state directly.
+
+ ```text
+ UI / Jev
+    |
+    v
+ settings/Focus                  Publishes modes, state, and isUpdating
+    |
+    | readModes(), readState(), switchMode(to:), disable(), changes
+    v
+ sdk/FocusKit
+    |
+    +--> ~/Library/DoNotDisturb/DB/ModeConfigurations.json
+    |       Configured mode IDs, names, and visibility
+    |
+    +--> ~/Library/DoNotDisturb/DB/Assertions.json
+    |       Active assertions, history, and database header
+    |
+    +--> donotdisturbd             Reloads the assertions after a write
+ ```
+
+ READING MODES AND STATE
+
+ Initialization starts file observation; it does not read or cache a snapshot.
+ Consumers subscribe to `changes` and perform their own initial reads. Each
+ read decodes the current file and requires exactly one database store.
+ `readModes()` returns modes whose visibility is 0. Sorting belongs to the
+ consumer. `readState()` examines the distinct mode IDs in active assertions:
+
+ ```text
+ Distinct mode IDs     isActive     currentModeID
+ -----------------    --------     -------------
+ 0                    false        nil             Focus is off
+ 1                    true         that mode ID    One identifiable mode
+ More than 1          nil          nil             Selection is ambiguous
+ ```
+
+ Several assertions can refer to the same mode. Their order does not identify
+ the selected mode when different IDs coexist, so we leave that state unknown.
+ File access and decoding errors throw; the settings layer clears the affected
+ published values and logs the error. An unreadable file is not treated as Off.
+
+ OBSERVING CHANGES WITHOUT POLLING
+
+ `changes` is an invalidation signal, not a stream of cached state. It has no
+ initial or replayed value; subscribers call the read APIs to get a snapshot.
+
+ ```text
+ DB directory ----+                Catches atomic file replacements
+ Modes file ------+                Catches in-place writes
+ Assertions file -+
+                  |
+                  v
+         DispatchSource filesystem event
+                  |
+                  v
+         Main actor: cancel old watches and attach new ones
+                  |                Replacements have new file descriptors
+                  v
+         changes emits ()
+                  |
+                  v
+         Subscriber rereads modes and state
+ ```
+
+ Inaccessible paths are skipped rather than retried on a timer. Watchers are
+ cancelled on teardown, and their cancellation handlers close the descriptors.
+
+ SWITCHING OR TURNING FOCUS OFF
+
+ Both actions use `setMode`: a mode ID means one new user-action assertion;
+ nil means an empty active assertion list. These replace the entire active
+ list, including assertions previously created by other clients. History and
+ other database fields are preserved.
+
+ ```text
+ switchMode(to: id) / disable()
+          |
+          v
+ Reject an overlapping change on this FocusKit instance
+          |
+          v
+ Revalidate a requested ID against the visible configured modes
+          |
+          v
+ Save original assertion bytes; require one store and header version 8
+          |
+          v
+ Compare existing mode ID set with the requested set
+          | equal -----------------> Return without writing or restarting
+          |                          (preserve the existing assertion lifetime)
+          | different
+          v
+ Replace active records; update header timestamp; preserve other fields
+          |
+          v
+ Atomically write Assertions.json
+          |
+          v
+ Restart donotdisturbd, then reread and compare the resulting mode ID set
+          |
+          +-- match ----------------> Return successfully
+          |
+          +-- reload / verify error
+                    |
+                    v
+             Does the file still equal the bytes we wrote?
+                    |
+                    +-- yes --> Restore original bytes and restart again
+                    +-- no ---> Leave the newer file alone
+                    |
+                    v
+             Throw (a rollback failure can also propagate)
+ ```
+
+ Restarting finds the current user's daemon processes, sends SIGTERM, waits
+ for process-exit events, then calls a regular launchctl kickstart. The exit
+ wait has a single five-second timeout. There is no process polling, and we
+ avoid kickstart -k because SIP blocks that operation on the target Mac.
+
+ Verification checks the resulting database assertions; it does not query the
+ daemon's live selection through a private framework. The rollback byte check
+ avoids replacing a newer update that we observe after our write; it is not a
+ lock against other processes changing the database.
+
+ Julia needs Full Disk Access to use these protected files. The directory and
+ reload implementation are internal, and the database format is private to
+ macOS. Writes deliberately reject assertion header versions other than 8.
+ */
 @MainActor
 final class FocusKit {
     struct State {
