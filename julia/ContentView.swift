@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Playgrounds
 
@@ -134,12 +135,11 @@ struct ContentView: View {
                 switch response.focus {
                 case .unchanged: break
                 case .off:
-                    do { try await focusManager.disable() }
-                    catch { print("Focus: \(error.localizedDescription)") }
+                    try await focusManager.disable()
                 case .mode(let id):
-                    do { try await focusManager.switchMode(to: id) }
-                    catch { print("Focus: \(error.localizedDescription)") }
+                    try await focusManager.switchMode(to: id)
                 }
+                NSSound(named: "Purr")?.play()
             } catch {
                 print("Jev: \(error.localizedDescription)")
             }
