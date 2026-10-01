@@ -6,6 +6,7 @@ struct ContentView: View {
     @StateObject private var wifiManager = Wifi()
     @StateObject private var bluetoothManager = Bluetooth()
     @StateObject private var playbackManager = Playback()
+    @StateObject private var focusManager = Focus()
     @EnvironmentObject private var audioManager: Audio
     private var jev = Jev(apiKey: ProcessInfo.processInfo.environment["JEV_API_KEY"]!)
     
@@ -30,6 +31,14 @@ struct ContentView: View {
                     playbackManager.pause()
                 }
             }
+            Text("Focus")
+            Menu(currentFocusName) {
+                Button("Off") { changeFocus(to: nil) }
+                ForEach(focusManager.modes ?? []) { mode in
+                    Button(mode.name) { changeFocus(to: mode.id) }
+                }
+            }
+            .disabled(focusManager.isUpdating)
             Text("AI")
             TextField("Send a prompt to jev", text: $jevPrompt)
                 .disableAutocorrection(true)
@@ -63,10 +72,31 @@ struct ContentView: View {
             self.bluetoothManager.enable()
         }
     }
+
+    private var currentFocusName: String {
+        if focusManager.isActive == false { return "Off" }
+        guard let id = focusManager.currentModeID else { return "Unknown" }
+        return focusManager.modes?.first(where: { $0.id == id })?.name ?? id
+    }
+
+    private func changeFocus(to id: String?) {
+        Task {
+            do {
+                if let id {
+                    try await focusManager.switchMode(to: id)
+                } else {
+                    try await focusManager.disable()
+                }
+            } catch {
+                print("Focus: \(error.localizedDescription)")
+            }
+        }
+    }
     
     func runJev(prompt: String) {
         Task {
             do {
+                let focusModes = focusManager.modes
                 let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
                     wifi: wifiManager.isEnabled,
                     bluetooth: bluetoothManager.isEnabled,
@@ -74,6 +104,11 @@ struct ContentView: View {
                         devices: audioManager.devices,
                         selectedDeviceID: audioManager.selectedDeviceID,
                         isMuted: audioManager.isMuted
+                    ),
+                    focus: .init(
+                        modes: focusModes,
+                        isActive: focusManager.isActive,
+                        currentModeID: focusManager.currentModeID
                     )
                 ))
 
@@ -95,6 +130,15 @@ struct ContentView: View {
                 case .unchanged: break
                 case .play: playbackManager.play()
                 case .pause: playbackManager.pause()
+                }
+                switch response.focus {
+                case .unchanged: break
+                case .off:
+                    do { try await focusManager.disable() }
+                    catch { print("Focus: \(error.localizedDescription)") }
+                case .mode(let id):
+                    do { try await focusManager.switchMode(to: id) }
+                    catch { print("Focus: \(error.localizedDescription)") }
                 }
             } catch {
                 print("Jev: \(error.localizedDescription)")
