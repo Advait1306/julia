@@ -1,12 +1,19 @@
 import SwiftUI
 
 @main struct Julia: App {
-    @StateObject private var audioManager = Audio()
+    @StateObject private var assistant = Assistant()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(audioManager)
+                .environmentObject(assistant)
+                .environmentObject(assistant.sst)
+                .environmentObject(assistant.hotkeys)
+                .environmentObject(assistant.wifiManager)
+                .environmentObject(assistant.bluetoothManager)
+                .environmentObject(assistant.playbackManager)
+                .environmentObject(assistant.focusManager)
+                .environmentObject(assistant.audioManager)
         }
     }
 }

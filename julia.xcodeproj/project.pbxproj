@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A51000000000000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A51000000000000000000002 /* FluidAudio */; };
 		92B906E2306B59DE003A4497 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 92B906E1306B59DE003A4497 /* Alamofire */; };
 		92BC60653065268A001F8E76 /* IOBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92BC60643065268A001F8E76 /* IOBluetooth.framework */; platformFilters = (macos, ); };
 		92BC60673065268A001F8E76 /* MediaRemote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92BC60663065268A001F8E76 /* MediaRemote.framework */; platformFilters = (macos, ); };
@@ -23,6 +24,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				julia.entitlements,
 			);
 			target = 000000000000000100000000 /* julia */;
 		};
@@ -46,6 +48,7 @@
 				92BC60653065268A001F8E76 /* IOBluetooth.framework in Frameworks */,
 				92BC60673065268A001F8E76 /* MediaRemote.framework in Frameworks */,
 				92B906E2306B59DE003A4497 /* Alamofire in Frameworks */,
+				A51000000000000000000003 /* FluidAudio in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -96,6 +99,7 @@
 			name = julia;
 			packageProductDependencies = (
 				92B906E1306B59DE003A4497 /* Alamofire */,
+				A51000000000000000000002 /* FluidAudio */,
 			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* julia.app */;
@@ -127,6 +131,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				92B906E0306B59DE003A4497 /* XCRemoteSwiftPackageReference "Alamofire" */,
+				A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -292,6 +297,7 @@
 		000000000000000111000000 /* Debug configuration for PBXNativeTarget "julia" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = julia/julia.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
@@ -335,6 +341,7 @@
 		000000000000000112000000 /* Release configuration for PBXNativeTarget "julia" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = julia/julia.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
@@ -397,6 +404,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.15.8;
+			};
+		};
 		92B906E0306B59DE003A4497 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
@@ -408,6 +423,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A51000000000000000000002 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
+		};
 		92B906E1306B59DE003A4497 /* Alamofire */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 92B906E0306B59DE003A4497 /* XCRemoteSwiftPackageReference "Alamofire" */;
