@@ -4,22 +4,14 @@ import Foundation
 import AVFoundation
 
 @MainActor
-protocol SpeechTranscribing: AnyObject {
-    var isReady: Bool { get }
-    func start() async throws
-    func finish() async throws -> String
-    func cancel() async
-}
-
-@MainActor
-final class SST: ObservableObject, SpeechTranscribing {
+final class SST: ObservableObject {
     enum ModelState: Equatable {
         case checking
         case notDownloaded
         case downloading(Double)
         case preparing
         case ready
-        case failed(String)
+        case failed
     }
 
     @Published private(set) var modelState: ModelState = .checking
@@ -30,13 +22,30 @@ final class SST: ObservableObject, SpeechTranscribing {
     private let worker = ModelWorker()
     private var checkedCache = false
     private var operationID: UUID?
-    private var sessionID: UUID?
-    private var engine: AVAudioEngine?
-    private var tapInstalled = false
-    private var pipe: CapturePipe?
-    private var consumer: Task<String, Error>?
-    private var captureObserver: NSObjectProtocol?
-    private var captureWatchdog: Task<Void, Never>?
+    private var session: TranscriptionSession?
+
+    private struct TranscriptionSession {
+        let id: UUID
+        var engine: AVAudioEngine?
+        var tapInstalled = false
+        var pipe: CapturePipe?
+        var consumer: Task<String, Error>?
+        var captureObserver: NSObjectProtocol?
+        var captureWatchdog: Task<Void, Never>?
+
+        mutating func stopCapture() {
+            captureWatchdog?.cancel()
+            captureWatchdog = nil
+            if let captureObserver { NotificationCenter.default.removeObserver(captureObserver) }
+            captureObserver = nil
+            if let engine {
+                engine.stop()
+                if tapInstalled { engine.inputNode.removeTap(onBus: 0) }
+            }
+            tapInstalled = false
+            engine = nil
+        }
+    }
 
     var isReady: Bool { modelState == .ready && microphoneEnabled }
 
@@ -54,15 +63,15 @@ final class SST: ObservableObject, SpeechTranscribing {
     func start() async throws {
         refreshMicrophonePermission()
         guard isReady else { throw SpeechError.notReady }
-        guard sessionID == nil else { throw SpeechError.busy }
+        guard session == nil else { throw SpeechError.busy }
         let id = UUID()
-        sessionID = id
+        session = TranscriptionSession(id: id)
         transcript = ""
 
         do {
             try await worker.reset()
             try Task.checkCancellation()
-            guard sessionID == id else { throw CancellationError() }
+            guard session?.id == id else { throw CancellationError() }
 
             let engine = AVAudioEngine()
             let input = engine.inputNode
@@ -74,44 +83,43 @@ final class SST: ObservableObject, SpeechTranscribing {
                 bufferingPolicy: .bufferingOldest(64)
             )
             let pipe = CapturePipe(continuation: continuation)
-            self.engine = engine
-            self.pipe = pipe
+            session?.engine = engine
+            session?.pipe = pipe
             try input.installAudioTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in
                 pipe.push(buffer)
             }
-            tapInstalled = true
-            consumer = Task { [worker, weak self] in
+            session?.tapInstalled = true
+            let consumer = Task { [worker, weak self] in
                 for try await chunk in stream {
                     try Task.checkCancellation()
                     let partial = try await worker.process(chunk)
-                    if self?.sessionID == id { self?.transcript = partial }
+                    if self?.session?.id == id { self?.transcript = partial }
                 }
                 try Task.checkCancellation()
                 return try await worker.finish()
             }
+            session?.consumer = consumer
             // Report consumer failures immediately, even while the key is held.
-            if let consumer {
-                Task { [weak self] in
-                    do { _ = try await consumer.value }
-                    catch {
-                        guard self?.sessionID == id, self?.engine != nil else { return }
-                        self?.onCaptureFailure?(error)
-                    }
+            Task { [weak self] in
+                do { _ = try await consumer.value }
+                catch {
+                    guard self?.session?.id == id, self?.session?.engine != nil else { return }
+                    self?.onCaptureFailure?(error)
                 }
             }
-            captureObserver = NotificationCenter.default.addObserver(
+            session?.captureObserver = NotificationCenter.default.addObserver(
                 forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main
             ) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    guard self?.sessionID == id, self?.engine != nil else { return }
+                    guard self?.session?.id == id, self?.session?.engine != nil else { return }
                     self?.onCaptureFailure?(SpeechError.deviceChanged)
                 }
             }
             engine.prepare()
             try engine.start()
-            captureWatchdog = Task { [weak self] in
+            session?.captureWatchdog = Task { [weak self] in
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
-                guard self?.sessionID == id, !pipe.receivedAudio else { return }
+                guard self?.session?.id == id, !pipe.receivedAudio else { return }
                 self?.onCaptureFailure?(SpeechError.noAudio)
             }
         } catch {
@@ -121,47 +129,33 @@ final class SST: ObservableObject, SpeechTranscribing {
     }
 
     func finish() async throws -> String {
-        guard let id = sessionID, let consumer else { throw SpeechError.notReady }
-        stopCapture()
+        guard let current = session, let consumer = current.consumer else { throw SpeechError.notReady }
+        session?.stopCapture()
         // Finishing the stream drains every accepted buffer before the consumer
         // invokes FluidAudio.finish(), including its held-back right context.
-        pipe?.finish()
+        current.pipe?.finish()
         defer {
-            if sessionID == id {
-                sessionID = nil
-                self.consumer = nil
-                pipe = nil
-            }
+            if session?.id == current.id { session = nil }
         }
         let final = try await consumer.value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard sessionID == id else { throw CancellationError() }
+        guard session?.id == current.id else { throw CancellationError() }
         transcript = final
         return final
     }
 
     func cancel() async {
-        sessionID = nil
-        stopCapture()
-        pipe?.finish()
-        let task = consumer
-        consumer = nil
-        pipe = nil
+        var current = session
+        session = nil
+        current?.stopCapture()
+        current?.pipe?.finish()
+        let task = current?.consumer
         task?.cancel()
         _ = try? await task?.value
-        try? await worker.reset()
-    }
-
-    private func stopCapture() {
-        captureWatchdog?.cancel()
-        captureWatchdog = nil
-        if let captureObserver { NotificationCenter.default.removeObserver(captureObserver) }
-        captureObserver = nil
-        if let engine {
-            engine.stop()
-            if tapInstalled { engine.inputNode.removeTap(onBus: 0) }
+        do {
+            try await worker.reset()
+        } catch {
+            print("SST: \(error.localizedDescription)")
         }
-        tapInstalled = false
-        engine = nil
     }
 
     var isPreparingModel: Bool {
@@ -179,7 +173,8 @@ final class SST: ObservableObject, SpeechTranscribing {
             let restored = try await worker.restoreIfAvailable()
             modelState = restored ? .ready : .notDownloaded
         } catch {
-            modelState = .failed(error.localizedDescription)
+            print("SST: \(error.localizedDescription)")
+            modelState = .failed
         }
     }
 
@@ -199,7 +194,8 @@ final class SST: ObservableObject, SpeechTranscribing {
             modelState = .ready
         } catch {
             operationID = nil
-            modelState = .failed(error.localizedDescription)
+            print("SST: \(error.localizedDescription)")
+            modelState = .failed
         }
     }
 
@@ -315,10 +311,6 @@ nonisolated final class CapturePipe: @unchecked Sendable {
     }
 
     func push(_ source: AVReadOnlyAudioPCMBuffer) {
-        enqueue(AVAudioPCMBuffer(copying: source))
-    }
-
-    func push(_ source: AVAudioPCMBuffer) {
         enqueue(AVAudioPCMBuffer(copying: source))
     }
 

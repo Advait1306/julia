@@ -9,10 +9,9 @@ final class Assistant: ObservableObject {
     }
 
     @Published private(set) var phase: Phase = .idle
-    @Published private(set) var errorMessage: String?
     @Published var prompt = ""
 
-    let sst: SST
+    let sst = SST()
     let hotkeys = HotkeyManager()
     let wifiManager = Wifi()
     let bluetoothManager = Bluetooth()
@@ -20,24 +19,12 @@ final class Assistant: ObservableObject {
     let focusManager = Focus()
     let audioManager = Audio()
 
-    private let speech: any SpeechTranscribing
-    private let commandHandler: ((String) async throws -> Void)?
-    private let jev: Jev?
+    private let jev = Jev()
     private var started = false
     private var sessionID: UUID?
     private var task: Task<Void, Never>?
 
-    init(sst: SST? = nil, speech: (any SpeechTranscribing)? = nil,
-         commandHandler: ((String) async throws -> Void)? = nil) {
-        let sst = sst ?? SST()
-        self.sst = sst
-        self.speech = speech ?? sst
-        self.commandHandler = commandHandler
-        if let key = ProcessInfo.processInfo.environment["JEV_API_KEY"], !key.isEmpty {
-            jev = Jev(apiKey: key)
-        } else {
-            jev = nil
-        }
+    init() {
         hotkeys.onPress = { [weak self] in self?.pressed() }
         hotkeys.onRelease = { [weak self] in self?.released() }
         hotkeys.onCancel = { [weak self] in self?.cancel() }
@@ -53,23 +40,22 @@ final class Assistant: ObservableObject {
 
     func pressed() {
         guard phase == .idle else { return }
-        guard speech.isReady else {
-            errorMessage = SpeechError.notReady.localizedDescription
+        guard sst.isReady else {
+            print("Assistant: \(SpeechError.notReady.localizedDescription)")
             return
         }
         let id = UUID()
         sessionID = id
-        errorMessage = nil
         phase = .starting
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.speech.start()
+                try await self.sst.start()
                 guard self.sessionID == id else { return }
                 self.phase = .listening
             } catch {
                 guard self.sessionID == id else { return }
-                self.errorMessage = error.localizedDescription
+                print("Assistant: \(error.localizedDescription)")
                 self.complete(id)
             }
         }
@@ -82,7 +68,7 @@ final class Assistant: ObservableObject {
         task = Task { [weak self] in
             guard let self else { return }
             do {
-                let text = try await self.speech.finish().trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = try await self.sst.finish().trimmingCharacters(in: .whitespacesAndNewlines)
                 guard self.sessionID == id else { return }
                 if !text.isEmpty {
                     self.prompt = text
@@ -91,8 +77,8 @@ final class Assistant: ObservableObject {
                 }
             } catch {
                 guard self.sessionID == id else { return }
-                self.errorMessage = error.localizedDescription
-                await self.speech.cancel()
+                print("Assistant: \(error.localizedDescription)")
+                await self.sst.cancel()
             }
             self.complete(id)
         }
@@ -105,10 +91,10 @@ final class Assistant: ObservableObject {
         task?.cancel()
         let previousTask = task
         phase = .finishing
-        if let error { errorMessage = error.localizedDescription }
+        if let error { print("Assistant: \(error.localizedDescription)") }
         task = Task { [weak self] in
             guard let self else { return }
-            await self.speech.cancel()
+            await self.sst.cancel()
             await previousTask?.value
             self.phase = .idle
             self.task = nil
@@ -120,12 +106,11 @@ final class Assistant: ObservableObject {
         guard phase == .idle, !text.isEmpty else { return }
         let id = UUID()
         sessionID = id
-        errorMessage = nil
         phase = .processing
         task = Task { [weak self] in
             guard let self else { return }
             do { try await self.runJev(prompt: text) }
-            catch { self.errorMessage = error.localizedDescription }
+            catch { print("Assistant: \(error.localizedDescription)") }
             self.complete(id)
         }
     }
@@ -138,12 +123,6 @@ final class Assistant: ObservableObject {
     }
 
     private func runJev(prompt: String) async throws {
-        if let commandHandler { try await commandHandler(prompt); return }
-        guard let jev else {
-            throw NSError(domain: "Julia", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "JEV_API_KEY is missing. Launch Julia with its configured Xcode scheme."
-            ])
-        }
         let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,

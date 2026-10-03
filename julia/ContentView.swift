@@ -92,11 +92,6 @@ struct ContentView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: 400, alignment: .leading)
             }
-            if let error = assistant.errorMessage {
-                Text(error)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
         }
     }
 
@@ -129,7 +124,7 @@ struct ContentView: View {
             switch sst.modelState {
             case .checking:
                 Text("Checking speech model…")
-            case .notDownloaded:
+            case .notDownloaded, .failed:
                 Text("Parakeet Unified · English · Download from Hugging Face")
             case .downloading(let progress):
                 ProgressView(value: progress)
@@ -142,10 +137,6 @@ struct ContentView: View {
             case .ready:
                 Label("Model ready", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
-            case .failed(let message):
-                Text("Couldn’t prepare speech model: \(message)")
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
             }
         }
         .font(.caption)
