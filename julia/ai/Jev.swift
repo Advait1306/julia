@@ -6,6 +6,7 @@
 //
 
 import Alamofire
+import Foundation
 
 nonisolated struct SettingsState: Encodable, Sendable {
     var wifi: Bool
@@ -48,15 +49,20 @@ nonisolated struct SettingsDecision: Sendable {
 }
 
 final class Jev {
-    private let apiKey: String
+    private let apiKey: String?
     private let session: Session
 
-    init(apiKey: String, session: Session = .default) {
-        self.apiKey = apiKey
+    init(apiKey: String? = nil, session: Session = .default) {
+        self.apiKey = apiKey ?? ProcessInfo.processInfo.environment["JEV_API_KEY"]
         self.session = session
     }
 
     func evaluate(prompt: String, state: SettingsState) async throws -> SettingsDecision {
+        guard let apiKey, !apiKey.isEmpty else {
+            throw NSError(domain: "Jev", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "JEV_API_KEY is missing. Launch Julia with its configured Xcode scheme."
+            ])
+        }
         var deviceChoices = ["unchanged": "Keep the current audio output"]
         for device in state.audio.devices {
             deviceChoices[String(device.id)] = device.name

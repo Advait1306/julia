@@ -1,0 +1,160 @@
+import AppKit
+import Combine
+import Foundation
+
+@MainActor
+final class Assistant: ObservableObject {
+    enum Phase: Equatable {
+        case idle, starting, listening, finishing, processing
+    }
+
+    @Published private(set) var phase: Phase = .idle
+    @Published var prompt = ""
+
+    let sst = SST()
+    let hotkeys = HotkeyManager()
+    let wifiManager = Wifi()
+    let bluetoothManager = Bluetooth()
+    let playbackManager = Playback()
+    let focusManager = Focus()
+    let audioManager = Audio()
+
+    private let jev = Jev()
+    private var started = false
+    private var sessionID: UUID?
+    private var task: Task<Void, Never>?
+
+    init() {
+        hotkeys.onPress = { [weak self] in self?.pressed() }
+        hotkeys.onRelease = { [weak self] in self?.released() }
+        hotkeys.onCancel = { [weak self] in self?.cancel() }
+        sst.onCaptureFailure = { [weak self] error in self?.cancel(error: error) }
+    }
+
+    func activate() async {
+        guard !started else { return }
+        started = true
+        hotkeys.start()
+        await sst.restoreModelIfAvailable()
+    }
+
+    func pressed() {
+        guard phase == .idle else { return }
+        guard sst.isReady else {
+            print("Assistant: \(SpeechError.notReady.localizedDescription)")
+            return
+        }
+        let id = UUID()
+        sessionID = id
+        phase = .starting
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.sst.start()
+                guard self.sessionID == id else { return }
+                self.phase = .listening
+            } catch {
+                guard self.sessionID == id else { return }
+                print("Assistant: \(error.localizedDescription)")
+                self.complete(id)
+            }
+        }
+    }
+
+    func released() {
+        if phase == .starting { cancel(); return }
+        guard phase == .listening, let id = sessionID else { return }
+        phase = .finishing
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let text = try await self.sst.finish().trimmingCharacters(in: .whitespacesAndNewlines)
+                guard self.sessionID == id else { return }
+                if !text.isEmpty {
+                    self.prompt = text
+                    self.phase = .processing
+                    try await self.runJev(prompt: text)
+                }
+            } catch {
+                guard self.sessionID == id else { return }
+                print("Assistant: \(error.localizedDescription)")
+                await self.sst.cancel()
+            }
+            self.complete(id)
+        }
+    }
+
+    func cancel(error: Error? = nil) {
+        guard sessionID != nil else { return }
+        guard phase == .starting || phase == .listening || phase == .finishing else { return }
+        sessionID = nil
+        task?.cancel()
+        let previousTask = task
+        phase = .finishing
+        if let error { print("Assistant: \(error.localizedDescription)") }
+        task = Task { [weak self] in
+            guard let self else { return }
+            await self.sst.cancel()
+            await previousTask?.value
+            self.phase = .idle
+            self.task = nil
+        }
+    }
+
+    func submitPrompt() {
+        let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard phase == .idle, !text.isEmpty else { return }
+        let id = UUID()
+        sessionID = id
+        phase = .processing
+        task = Task { [weak self] in
+            guard let self else { return }
+            do { try await self.runJev(prompt: text) }
+            catch { print("Assistant: \(error.localizedDescription)") }
+            self.complete(id)
+        }
+    }
+
+    private func complete(_ id: UUID) {
+        guard sessionID == id else { return }
+        sessionID = nil
+        phase = .idle
+        task = nil
+    }
+
+    private func runJev(prompt: String) async throws {
+        let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
+            wifi: wifiManager.isEnabled,
+            bluetooth: bluetoothManager.isEnabled,
+            audio: .init(devices: audioManager.devices, selectedDeviceID: audioManager.selectedDeviceID,
+                         isMuted: audioManager.isMuted),
+            focus: .init(modes: focusManager.modes, isActive: focusManager.isActive,
+                         currentModeID: focusManager.currentModeID)
+        ))
+        if response.wifi != wifiManager.isEnabled {
+            if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
+        }
+        if response.bluetooth != bluetoothManager.isEnabled {
+            if response.bluetooth { bluetoothManager.enable() } else { bluetoothManager.disable() }
+        }
+        if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
+            try audioManager.switchDevice(to: id)
+        }
+        switch response.audioMute {
+        case .unchanged: break
+        case .mute: audioManager.mute()
+        case .unmute: audioManager.unmute()
+        }
+        switch response.playback {
+        case .unchanged: break
+        case .play: playbackManager.play()
+        case .pause: playbackManager.pause()
+        }
+        switch response.focus {
+        case .unchanged: break
+        case .off: try await focusManager.disable()
+        case .mode(let id): try await focusManager.switchMode(to: id)
+        }
+        NSSound(named: "Purr")?.play()
+    }
+}
