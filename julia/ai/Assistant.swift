@@ -18,6 +18,7 @@ final class Assistant: ObservableObject {
     let playbackManager = Playback()
     let focusManager = Focus()
     let audioManager = Audio()
+    let appsManager = Apps()
 
     private let jev = Jev()
     private var started = false
@@ -123,13 +124,15 @@ final class Assistant: ObservableObject {
     }
 
     private func runJev(prompt: String) async throws {
+        appsManager.refresh()
         let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
             audio: .init(devices: audioManager.devices, selectedDeviceID: audioManager.selectedDeviceID,
                          isMuted: audioManager.isMuted),
             focus: .init(modes: focusManager.modes, isActive: focusManager.isActive,
-                         currentModeID: focusManager.currentModeID)
+                         currentModeID: focusManager.currentModeID),
+            apps: appsManager.installed
         ))
         if response.wifi != wifiManager.isEnabled {
             if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
@@ -154,6 +157,9 @@ final class Assistant: ObservableObject {
         case .unchanged: break
         case .off: try await focusManager.disable()
         case .mode(let id): try await focusManager.switchMode(to: id)
+        }
+        if let id = response.appID {
+            try await appsManager.openApp(id: id)
         }
         NSSound(named: "Purr")?.play()
     }
