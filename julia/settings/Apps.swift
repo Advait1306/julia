@@ -42,7 +42,7 @@ final class Apps: ObservableObject {
         refresh()
     }
 
-    func refresh() {
+    private func refresh() {
         var apps: [String: InstalledApp] = [:]
         for root in roots {
             if root.pathExtension.lowercased() == "app" {

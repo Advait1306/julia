@@ -124,7 +124,6 @@ final class Assistant: ObservableObject {
     }
 
     private func runJev(prompt: String) async throws {
-        appsManager.refresh()
         let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
