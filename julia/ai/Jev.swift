@@ -13,6 +13,7 @@ nonisolated struct SettingsState: Encodable, Sendable {
     var bluetooth: Bool
     var audio: AudioState
     var focus: FocusState
+    var apps: [InstalledApp]
 
     struct AudioState: Encodable, Sendable {
         let devices: [AudioDevice]
@@ -46,6 +47,7 @@ nonisolated struct SettingsDecision: Sendable {
     let audioDeviceID: UInt32?
     let playback: PlaybackAction
     let focus: FocusChoice
+    let appID: String?
 }
 
 final class Jev {
@@ -73,11 +75,38 @@ final class Jev {
             focusChoices[mode.id] = mode.name
         }
 
+        var appChoices = ["unchanged": "Don't open or switch apps"]
+        for app in state.apps {
+            if let identifier = app.bundleIdentifier {
+                appChoices[app.id] = "\(app.name) (bundle ID: \(identifier))"
+            } else {
+                appChoices[app.id] = app.name
+            }
+        }
+
         let parameters = EvaluationRequest(
             state: .init(prompt: prompt, settings: state),
             questions: [
                 "wifi": Question(setting: "Wi-Fi", key: "wifi"),
                 "bluetooth": Question(setting: "Bluetooth", key: "bluetooth"),
+                "openApp": Question(
+                    instructions: """
+                        Which installed app does the user's `prompt` request opening, launching,
+                        or switching to? Available apps are in `settings.apps`; each ID is its
+                        exact installed path. Match the requested product using its name,
+                        filename, and bundleIdentifier. Display names and filenames can be
+                        outdated after an app is renamed; the bundle identifier can identify
+                        the product. Prefer an exact product match over a similar app name.
+                        Choose a listed ID only when the prompt explicitly
+                        requests opening or switching to one app and identifies it unambiguously.
+                        Opening also brings an already running app to the foreground.
+                        Choose unchanged for unrelated requests, merely mentioning an app,
+                        unavailable apps, ambiguous names, or requests to open multiple apps.
+                        Never substitute a different app just because its name is similar.
+                        Never invent an app ID or a command.
+                        """,
+                    criteria: appChoices
+                ),
                 "focusMode": Question(
                     instructions: """
                         Which Focus mode does the user's `prompt` request?
@@ -168,13 +197,27 @@ final class Jev {
             focusChoice = .mode(id)
         }
 
+        let appChoice = response.answers.openApp.choice
+        let appID: String?
+        if appChoice == "unchanged" {
+            appID = nil
+        } else {
+            guard state.apps.contains(where: { $0.id == appChoice }) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: [], debugDescription: "Jev selected an unavailable app."
+                ))
+            }
+            appID = appChoice
+        }
+
         return SettingsDecision(
             wifi: response.answers.wifi.choice == .on,
             bluetooth: response.answers.bluetooth.choice == .on,
             audioMute: response.answers.audioMute.choice,
             audioDeviceID: deviceID,
             playback: response.answers.playback.choice,
-            focus: focusChoice
+            focus: focusChoice,
+            appID: appID
         )
     }
 }
@@ -227,6 +270,7 @@ private nonisolated struct EvaluationResponse: Decodable, Sendable {
         let audioDevice: Answer<String>
         let playback: Answer<SettingsDecision.PlaybackAction>
         let focusMode: Answer<String>
+        let openApp: Answer<String>
     }
 
     let answers: Answers
