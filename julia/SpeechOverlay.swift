@@ -6,12 +6,15 @@ import SwiftUI
 @MainActor
 final class SpeechOverlayController {
     private let panel: NSPanel
+    private let content: SpeechOverlayContentView
     private var subscription: AnyCancellable?
     private var screenObserver: NSObjectProtocol?
     private var dismissTask: Task<Void, Never>?
+    private var transitionID = UUID()
     private var isPresented = false
 
     init(assistant: Assistant) {
+        content = SpeechOverlayContentView(assistant: assistant)
         panel = SpeechPanel(contentRect: .zero,
                             styleMask: [.borderless, .nonactivatingPanel],
                             backing: .buffered, defer: false)
@@ -24,7 +27,7 @@ final class SpeechOverlayController {
         panel.isReleasedWhenClosed = false
         panel.ignoresMouseEvents = true
         panel.isMovable = false
-        panel.contentView = NSHostingView(rootView: SpeechOverlayView(assistant: assistant, sst: assistant.sst))
+        panel.contentView = content
 
         subscription = assistant.$speechDisplay.sink { [weak self] display in
             self?.update(display)
@@ -59,14 +62,22 @@ final class SpeechOverlayController {
 
     private func show() {
         guard !isPresented else { return }
+        let id = UUID()
+        transitionID = id
         isPresented = true
-        // The pointer identifies the display the user is working on; main is the fallback.
-        position(on: NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main)
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
-            panel.animator().alphaValue = 1
+        content.textView.isHidden = true
+        content.setTextOpacity(0)
+        if !panel.isVisible {
+            // The pointer identifies the display the user is working on; main is the fallback.
+            position(on: NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main)
+            content.blurView.setRadius(0)
+            panel.orderFrontRegardless()
+            content.layoutSubtreeIfNeeded()
+        }
+        content.blurView.setRadius(18, duration: blurTransitionDuration) { [weak self] in
+            guard let self, self.isPresented, self.transitionID == id else { return }
+            self.content.textView.isHidden = false
+            self.content.setTextOpacity(1, duration: self.textTransitionDuration)
         }
     }
 
@@ -87,17 +98,27 @@ final class SpeechOverlayController {
 
     private func hide() {
         guard isPresented else { return }
+        let id = UUID()
+        transitionID = id
         isPresented = false
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.18
-            panel.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            Task { @MainActor [weak self] in
-                // A fresh Command press may arrive before this animation finishes.
-                guard let self, !self.isPresented else { return }
+        // If dismissed during blur-in, there is no visible text to fade out.
+        let duration = content.textView.isHidden ? 0 : textTransitionDuration
+        content.setTextOpacity(0, duration: duration) { [weak self] in
+            guard let self, !self.isPresented, self.transitionID == id else { return }
+            self.content.textView.isHidden = true
+            self.content.blurView.setRadius(0, duration: self.blurTransitionDuration) { [weak self] in
+                guard let self, !self.isPresented, self.transitionID == id else { return }
                 self.panel.orderOut(nil)
             }
         }
+    }
+
+    private var blurTransitionDuration: TimeInterval {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.24
+    }
+
+    private var textTransitionDuration: TimeInterval {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : 0.12
     }
 
     isolated deinit {
@@ -112,42 +133,92 @@ private final class SpeechPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// Text fades independently of the blur so their animations can run in sequence.
+private final class SpeechOverlayContentView: NSView {
+    let blurView = FeatheredBlurView()
+    let textView: NSHostingView<SpeechOverlayView>
+
+    init(assistant: Assistant) {
+        textView = NSHostingView(rootView: SpeechOverlayView(assistant: assistant, sst: assistant.sst))
+        super.init(frame: .zero)
+        textView.wantsLayer = true
+        textView.isHidden = true
+        addSubview(blurView)
+        addSubview(textView)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setTextOpacity(_ opacity: Float, duration: TimeInterval = 0, completion: (() -> Void)? = nil) {
+        guard let layer = textView.layer else { completion?(); return }
+        let current = layer.presentation()?.opacity ?? layer.opacity
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if duration > 0 {
+            CATransaction.setCompletionBlock {
+                Task { @MainActor in completion?() }
+            }
+        }
+        layer.removeAnimation(forKey: "textOpacity")
+        layer.opacity = opacity
+        if duration > 0 {
+            let animation = CABasicAnimation(keyPath: "opacity")
+            animation.fromValue = current
+            animation.toValue = opacity
+            animation.duration = duration
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            layer.add(animation, forKey: "textOpacity")
+        }
+        CATransaction.commit()
+        if duration == 0 { completion?() }
+    }
+
+    override func layout() {
+        super.layout()
+        blurView.frame = bounds
+        textView.frame = bounds
+    }
+}
+
 struct SpeechOverlayView: View {
     @ObservedObject var assistant: Assistant
     @ObservedObject var sst: SST
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            CornerBlur()
-
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 8) {
-                    Image(systemName: statusSymbol)
-                        .font(.system(size: 12, weight: .medium))
-                    Text(status)
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundStyle(.secondary)
-
-                ScrollView {
-                    Text(text)
-                        .font(.system(size: 24, weight: .medium))
-                        .tracking(-0.4)
-                        .lineSpacing(5)
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .scrollIndicators(.hidden)
-                .defaultScrollAnchor(.bottom)
-                .defaultScrollAnchor(.top, for: .alignment)
-                .frame(maxHeight: .infinity)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 8) {
+                Image(systemName: statusSymbol)
+                    .font(.system(size: 12, weight: .medium))
+                Text(status)
+                    .font(.system(size: 13, weight: .medium))
             }
-            .padding(.leading, 64)
-            .padding(.trailing, 32)
-            .padding(.top, 28)
-            .padding(.bottom, 64)
+            .foregroundStyle(.secondary)
+
+            ScrollView {
+                Group {
+                    if case .message = assistant.speechDisplay {
+                        Text(text)
+                    } else {
+                        AnimatedTranscript(text: text)
+                    }
+                }
+                .font(.system(size: 24, weight: .medium))
+                .tracking(-0.4)
+                .lineSpacing(5)
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            .scrollIndicators(.hidden)
+            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(.top, for: .alignment)
+            .frame(maxHeight: .infinity)
         }
+        .padding(.leading, 64)
+        .padding(.trailing, 32)
+        .padding(.top, 28)
+        .padding(.bottom, 64)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Julia. \(status). \(text)")
     }
@@ -178,11 +249,6 @@ struct SpeechOverlayView: View {
     }
 }
 
-private struct CornerBlur: NSViewRepresentable {
-    func makeNSView(context: Context) -> FeatheredBlurView { FeatheredBlurView() }
-    func updateNSView(_ nsView: FeatheredBlurView, context: Context) {}
-}
-
 /// A Gaussian-only backdrop preserves the colors behind it. AppKit materials
 /// add a light/dark tint, so they cannot provide the untinted blur used here.
 /// CABackdropLayer and CAFilter are private Core Animation APIs, resolved at
@@ -206,7 +272,7 @@ private final class FeatheredBlurView: NSView {
             let backdrop = backdropClass.init()
             backdrop.setValue(true, forKey: "windowServerAware")
             backdrop.setValue(false, forKey: "allowsInPlaceFiltering")
-            blur.setValue(18.0, forKey: "inputRadius")
+            blur.setValue(0.0, forKey: "inputRadius")
             blur.setValue(true, forKey: "inputNormalizeEdges")
             backdrop.filters = [blur]
             self.backdrop = backdrop
@@ -226,6 +292,33 @@ private final class FeatheredBlurView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setRadius(_ radius: CGFloat, duration: TimeInterval = 0, completion: (() -> Void)? = nil) {
+        guard let backdrop else { completion?(); return }
+        let keyPath = "filters.gaussianBlur.inputRadius"
+        // Reverse from the currently displayed radius if a new press interrupts blur-out.
+        let current = backdrop.presentation()?.value(forKeyPath: keyPath)
+            ?? backdrop.value(forKeyPath: keyPath)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if duration > 0 {
+            CATransaction.setCompletionBlock {
+                Task { @MainActor in completion?() }
+            }
+        }
+        backdrop.removeAnimation(forKey: "blurRadius")
+        backdrop.setValue(radius, forKeyPath: keyPath)
+        if duration > 0 {
+            let animation = CABasicAnimation(keyPath: keyPath)
+            animation.fromValue = current
+            animation.toValue = radius
+            animation.duration = duration
+            animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            backdrop.add(animation, forKey: "blurRadius")
+        }
+        CATransaction.commit()
+        if duration == 0 { completion?() }
+    }
 
     override func layout() {
         super.layout()
