@@ -2,6 +2,12 @@ import AppKit
 import Combine
 import SwiftUI
 
+private enum SpeechOverlayLayout {
+    static let textSize = NSSize(width: 520, height: 320)
+    // Extra space lets the blur reach zero outside the text instead of ending at its edge.
+    static let blurSize = NSSize(width: 680, height: 440)
+}
+
 /// A nonactivating panel keeps the app beneath it focused, including in full screen.
 @MainActor
 final class SpeechOverlayController {
@@ -84,7 +90,8 @@ final class SpeechOverlayController {
     private func position(on screen: NSScreen?) {
         guard let screen else { return }
         let bounds = screen.visibleFrame
-        let size = NSSize(width: min(520, bounds.width), height: min(320, bounds.height))
+        let size = NSSize(width: min(SpeechOverlayLayout.blurSize.width, bounds.width),
+                          height: min(SpeechOverlayLayout.blurSize.height, bounds.height))
         panel.setFrame(NSRect(x: bounds.maxX - size.width, y: bounds.maxY - size.height,
                               width: size.width, height: size.height), display: true)
     }
@@ -176,7 +183,10 @@ private final class SpeechOverlayContentView: NSView {
     override func layout() {
         super.layout()
         blurView.frame = bounds
-        textView.frame = bounds
+        let size = NSSize(width: min(SpeechOverlayLayout.textSize.width, bounds.width),
+                          height: min(SpeechOverlayLayout.textSize.height, bounds.height))
+        textView.frame = NSRect(x: bounds.maxX - size.width, y: bounds.maxY - size.height,
+                               width: size.width, height: size.height)
     }
 }
 
@@ -249,14 +259,14 @@ struct SpeechOverlayView: View {
     }
 }
 
-/// A Gaussian-only backdrop preserves the colors behind it. AppKit materials
-/// add a light/dark tint, so they cannot provide the untinted blur used here.
+/// A variable-radius backdrop preserves the colors behind it and gradually reaches
+/// zero blur at its interior edges. The mask controls radius, not layer opacity.
 /// CABackdropLayer and CAFilter are private Core Animation APIs, resolved at
 /// runtime; if unavailable, the view stays transparent rather than adding a fill.
 private final class FeatheredBlurView: NSView {
     private var backdrop: CALayer?
-    private let horizontalMask = CAGradientLayer()
-    private let verticalMask = CAGradientLayer()
+    private var maskSize = NSSize.zero
+    private var maskScale: CGFloat = 0
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -267,7 +277,7 @@ private final class FeatheredBlurView: NSView {
         if let backdropClass = NSClassFromString("CABackdropLayer") as? CALayer.Type,
            let filterClass = NSClassFromString("CAFilter"),
            (filterClass as AnyObject).responds(to: selector),
-           let blur = (filterClass as AnyObject).perform(selector, with: "gaussianBlur")?
+           let blur = (filterClass as AnyObject).perform(selector, with: "variableBlur")?
             .takeUnretainedValue() as? NSObject {
             let backdrop = backdropClass.init()
             backdrop.setValue(true, forKey: "windowServerAware")
@@ -278,24 +288,13 @@ private final class FeatheredBlurView: NSView {
             self.backdrop = backdrop
             layer?.addSublayer(backdrop)
         }
-
-        horizontalMask.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor]
-        horizontalMask.locations = [0, 0.16, 1]
-        horizontalMask.startPoint = CGPoint(x: 0, y: 0.5)
-        horizontalMask.endPoint = CGPoint(x: 1, y: 0.5)
-        verticalMask.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor]
-        verticalMask.locations = [0, 0.22, 1]
-        verticalMask.startPoint = CGPoint(x: 0.5, y: 0)
-        verticalMask.endPoint = CGPoint(x: 0.5, y: 1)
-        horizontalMask.mask = verticalMask
-        layer?.mask = horizontalMask
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func setRadius(_ radius: CGFloat, duration: TimeInterval = 0, completion: (() -> Void)? = nil) {
         guard let backdrop else { completion?(); return }
-        let keyPath = "filters.gaussianBlur.inputRadius"
+        let keyPath = "filters.variableBlur.inputRadius"
         // Reverse from the currently displayed radius if a new press interrupts blur-out.
         let current = backdrop.presentation()?.value(forKeyPath: keyPath)
             ?? backdrop.value(forKeyPath: keyPath)
@@ -325,8 +324,49 @@ private final class FeatheredBlurView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         backdrop?.frame = bounds
-        horizontalMask.frame = bounds
-        verticalMask.frame = bounds
+        let scale = window?.backingScaleFactor ?? 1
+        if bounds.size != maskSize || scale != maskScale,
+           let image = makeRadiusMask(size: bounds.size, scale: scale) {
+            backdrop?.contentsScale = scale
+            backdrop?.setValue(scale, forKey: "scale")
+            backdrop?.setValue(image, forKeyPath: "filters.variableBlur.inputMaskImage")
+            maskSize = bounds.size
+            maskScale = scale
+        }
         CATransaction.commit()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        needsLayout = true
+    }
+
+    private func makeRadiusMask(size: NSSize, scale: CGFloat) -> CGImage? {
+        guard size.width > 0, size.height > 0 else { return nil }
+        let width = Int(ceil(size.width * scale))
+        let height = Int(ceil(size.height * scale))
+        let fadeWidth = min(260, size.width)
+        let fadeHeight = min(220, size.height)
+        func smoothstep(_ value: CGFloat) -> CGFloat {
+            let t = min(1, max(0, value))
+            return t * t * (3 - 2 * t)
+        }
+        let horizontal = (0..<width).map { smoothstep(CGFloat($0) / scale / fadeWidth) }
+        var pixels = Data(count: width * height * 4)
+        pixels.withUnsafeMutableBytes { bytes in
+            let buffer = bytes.bindMemory(to: UInt8.self)
+            for row in 0..<height {
+                // CGImage rows start at the top; AppKit's interior edge is at the bottom.
+                let vertical = smoothstep(CGFloat(height - 1 - row) / scale / fadeHeight)
+                for column in 0..<width {
+                    buffer[(row * width + column) * 4 + 3] = UInt8((255 * horizontal[column] * vertical).rounded())
+                }
+            }
+        }
+        guard let provider = CGDataProvider(data: pixels as CFData) else { return nil }
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 }
