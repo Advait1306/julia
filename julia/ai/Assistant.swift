@@ -8,7 +8,13 @@ final class Assistant: ObservableObject {
         case idle, starting, listening, finishing, processing
     }
 
+    enum SpeechDisplay: Equatable {
+        case hidden, active, completed
+        case message(String)
+    }
+
     @Published private(set) var phase: Phase = .idle
+    @Published private(set) var speechDisplay: SpeechDisplay = .hidden
     @Published var prompt = ""
 
     let sst = SST()
@@ -41,13 +47,21 @@ final class Assistant: ObservableObject {
 
     func pressed() {
         guard phase == .idle else { return }
+        sst.refreshMicrophonePermission()
         guard sst.isReady else {
-            print("Assistant: \(SpeechError.notReady.localizedDescription)")
+            if !sst.microphoneEnabled {
+                speechDisplay = .message("Enable the microphone from Julia in the menu bar.")
+            } else if sst.isPreparingModel {
+                speechDisplay = .message("The speech model is getting ready. Try again in a moment.")
+            } else {
+                speechDisplay = .message("Download the speech model from Julia in the menu bar.")
+            }
             return
         }
         let id = UUID()
         sessionID = id
         phase = .starting
+        speechDisplay = .active
         task = Task { [weak self] in
             guard let self else { return }
             do {
@@ -57,6 +71,7 @@ final class Assistant: ObservableObject {
             } catch {
                 guard self.sessionID == id else { return }
                 print("Assistant: \(error.localizedDescription)")
+                self.speechDisplay = .message(error.localizedDescription)
                 self.complete(id)
             }
         }
@@ -79,6 +94,7 @@ final class Assistant: ObservableObject {
             } catch {
                 guard self.sessionID == id else { return }
                 print("Assistant: \(error.localizedDescription)")
+                self.speechDisplay = .message(error.localizedDescription)
                 await self.sst.cancel()
             }
             self.complete(id)
@@ -92,7 +108,12 @@ final class Assistant: ObservableObject {
         task?.cancel()
         let previousTask = task
         phase = .finishing
-        if let error { print("Assistant: \(error.localizedDescription)") }
+        if let error {
+            print("Assistant: \(error.localizedDescription)")
+            speechDisplay = .message(error.localizedDescription)
+        } else {
+            speechDisplay = .hidden
+        }
         task = Task { [weak self] in
             guard let self else { return }
             await self.sst.cancel()
@@ -119,6 +140,9 @@ final class Assistant: ObservableObject {
     private func complete(_ id: UUID) {
         guard sessionID == id else { return }
         sessionID = nil
+        if speechDisplay == .active {
+            speechDisplay = phase == .processing ? .completed : .hidden
+        }
         phase = .idle
         task = nil
     }

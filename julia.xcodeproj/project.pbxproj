@@ -7,10 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A51000000000000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A51000000000000000000002 /* FluidAudio */; };
 		92B906E2306B59DE003A4497 /* Alamofire in Frameworks */ = {isa = PBXBuildFile; productRef = 92B906E1306B59DE003A4497 /* Alamofire */; };
 		92BC60653065268A001F8E76 /* IOBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92BC60643065268A001F8E76 /* IOBluetooth.framework */; platformFilters = (macos, ); };
 		92BC60673065268A001F8E76 /* MediaRemote.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 92BC60663065268A001F8E76 /* MediaRemote.framework */; platformFilters = (macos, ); };
+		A51000000000000000000003 /* FluidAudio in Frameworks */ = {isa = PBXBuildFile; productRef = A51000000000000000000002 /* FluidAudio */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -24,7 +24,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
-				julia.entitlements,
 			);
 			target = 000000000000000100000000 /* julia */;
 		};
@@ -404,14 +403,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
-			requirement = {
-				kind = exactVersion;
-				version = 0.15.8;
-			};
-		};
 		92B906E0306B59DE003A4497 /* XCRemoteSwiftPackageReference "Alamofire" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/Alamofire/Alamofire.git";
@@ -420,18 +411,26 @@
 				minimumVersion = 5.12.2;
 			};
 		};
+		A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/FluidInference/FluidAudio.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.15.8;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A51000000000000000000002 /* FluidAudio */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
-			productName = FluidAudio;
-		};
 		92B906E1306B59DE003A4497 /* Alamofire */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 92B906E0306B59DE003A4497 /* XCRemoteSwiftPackageReference "Alamofire" */;
 			productName = Alamofire;
+		};
+		A51000000000000000000002 /* FluidAudio */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A51000000000000000000001 /* XCRemoteSwiftPackageReference "FluidAudio" */;
+			productName = FluidAudio;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
