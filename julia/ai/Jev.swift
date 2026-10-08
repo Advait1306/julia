@@ -15,6 +15,7 @@ nonisolated struct SettingsState: Encodable, Sendable {
     var audio: AudioState
     var focus: FocusState
     var apps: [InstalledApp]
+    var vpns: [VPNConnection]
 
     struct AudioState: Encodable, Sendable {
         let devices: [AudioDevice]
@@ -42,6 +43,10 @@ nonisolated struct SettingsDecision: Sendable {
         case unchanged, off, mode(String)
     }
 
+    enum VPNAction: String, Decodable, Sendable {
+        case unchanged, enable, disable
+    }
+
     let wifi: Bool
     let bluetooth: Bool
     let darkMode: Bool
@@ -50,6 +55,7 @@ nonisolated struct SettingsDecision: Sendable {
     let playback: PlaybackAction
     let focus: FocusChoice
     let appID: String?
+    let vpnChanges: [VPNChange]
 }
 
 final class Jev {
@@ -86,9 +92,7 @@ final class Jev {
             }
         }
 
-        let parameters = EvaluationRequest(
-            state: .init(prompt: prompt, settings: state),
-            questions: [
+        var questions: [String: Question] = [
                 "wifi": Question(setting: "Wi-Fi", key: "wifi"),
                 "bluetooth": Question(setting: "Bluetooth", key: "bluetooth"),
                 "darkMode": Question(
@@ -172,7 +176,31 @@ final class Jev {
                     criteria: deviceChoices
                 )
             ]
-        )
+        for vpn in state.vpns {
+            questions["vpn_\(vpn.id)"] = Question(
+                instructions: """
+                    Which connection action does the user's `prompt` request for the VPN
+                    with ID \(vpn.id)? Its name and connection state are in `settings.vpns`.
+                    Enable means connect; disable means disconnect. These actions do not
+                    install, delete, or change the VPN's configuration.
+                    Evaluate this VPN independently; multiple VPNs can change in one request.
+                    Choose unchanged unless this VPN is included in a requested change.
+                    Match named VPNs unambiguously using the list; never substitute another VPN.
+                    Apply requests for all VPNs to every listed VPN, respecting any exceptions.
+                    For "disable all VPNs except Tailscale", disable every other VPN and leave
+                    Tailscale unchanged. Only enable the exception if the prompt also asks to
+                    connect it (for example, "only keep Tailscale connected"). If a named
+                    exception is unavailable or ambiguous, leave all VPNs unchanged.
+                    For a toggle, enable when disconnected or disconnecting, and disable
+                    when connected or connecting. Choose unchanged when the state is unknown.
+                    Choose unchanged for unrelated prompts, unavailable or ambiguous names,
+                    and configuration changes such as VPN On Demand or server selection.
+                    """,
+                criteria: ["unchanged": "Leave this VPN unchanged", "enable": "Connect this VPN",
+                           "disable": "Disconnect this VPN"]
+            )
+        }
+        let parameters = EvaluationRequest(state: .init(prompt: prompt, settings: state), questions: questions)
 
         let response = try await session.request(
             "https://api.typesafe.ai/v1/systemone",
@@ -224,6 +252,20 @@ final class Jev {
             appID = appChoice
         }
 
+        let expectedVPNKeys = Set(state.vpns.map { "vpn_\($0.id)" })
+        guard Set(response.vpnAnswers.keys) == expectedVPNKeys else {
+            throw DecodingError.dataCorrupted(.init(
+                codingPath: [], debugDescription: "Jev returned missing or unavailable VPN choices."
+            ))
+        }
+        let vpnChanges = state.vpns.compactMap { vpn -> VPNChange? in
+            switch response.vpnAnswers["vpn_\(vpn.id)"]?.choice {
+            case .enable: return VPNChange(id: vpn.id, isConnected: true)
+            case .disable: return VPNChange(id: vpn.id, isConnected: false)
+            default: return nil
+            }
+        }
+
         return SettingsDecision(
             wifi: response.answers.wifi.choice == .on,
             bluetooth: response.answers.bluetooth.choice == .on,
@@ -232,7 +274,8 @@ final class Jev {
             audioDeviceID: deviceID,
             playback: response.answers.playback.choice,
             focus: focusChoice,
-            appID: appID
+            appID: appID,
+            vpnChanges: vpnChanges
         )
     }
 }
@@ -290,4 +333,21 @@ private nonisolated struct EvaluationResponse: Decodable, Sendable {
     }
 
     let answers: Answers
+    let vpnAnswers: [String: Answer<SettingsDecision.VPNAction>]
+
+    private enum CodingKeys: String, CodingKey { case answers }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        answers = try container.decode(Answers.self, forKey: .answers)
+        let allAnswers = try container.decode([String: Answer<String>].self, forKey: .answers)
+        vpnAnswers = try allAnswers.filter { $0.key.hasPrefix("vpn_") }.mapValues { answer in
+            guard let action = SettingsDecision.VPNAction(rawValue: answer.choice) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath, debugDescription: "Jev returned an invalid VPN action."
+                ))
+            }
+            return Answer(choice: action)
+        }
+    }
 }
