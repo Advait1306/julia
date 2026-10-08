@@ -87,13 +87,14 @@ final class Assistant: ObservableObject {
         phase = .finishing
         task = Task { [weak self] in
             guard let self else { return }
+            var didChange = false
             do {
                 let text = try await self.sst.finish().trimmingCharacters(in: .whitespacesAndNewlines)
                 guard self.sessionID == id else { return }
                 if !text.isEmpty {
                     self.prompt = text
                     self.phase = .processing
-                    try await self.runJev(prompt: text)
+                    didChange = try await self.runJev(prompt: text)
                 }
             } catch {
                 guard self.sessionID == id else { return }
@@ -101,7 +102,7 @@ final class Assistant: ObservableObject {
                 self.speechDisplay = .message(error.localizedDescription)
                 await self.sst.cancel()
             }
-            self.complete(id)
+            self.complete(id, didChange: didChange)
         }
     }
 
@@ -135,23 +136,25 @@ final class Assistant: ObservableObject {
         phase = .processing
         task = Task { [weak self] in
             guard let self else { return }
-            do { try await self.runJev(prompt: text) }
+            var didChange = false
+            do { didChange = try await self.runJev(prompt: text) }
             catch { print("Assistant: \(error.localizedDescription)") }
-            self.complete(id)
+            self.complete(id, didChange: didChange)
         }
     }
 
-    private func complete(_ id: UUID) {
+    private func complete(_ id: UUID, didChange: Bool = false) {
         guard sessionID == id else { return }
         sessionID = nil
         if speechDisplay == .active {
-            speechDisplay = phase == .processing ? .completed : .hidden
+            speechDisplay = didChange ? .completed : .hidden
         }
+        if didChange { NSSound(named: "Purr")?.play() }
         phase = .idle
         task = nil
     }
 
-    private func runJev(prompt: String) async throws {
+    private func runJev(prompt: String) async throws -> Bool {
         let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
@@ -164,12 +167,16 @@ final class Assistant: ObservableObject {
             vpns: vpnManager.connections
         ))
 
+        var didChange = false
+
         if response.wifi != wifiManager.isEnabled {
-            if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
+            let changed = try response.wifi ? wifiManager.enable() : wifiManager.disable()
+            didChange = changed || didChange
         }
 
         if response.bluetooth != bluetoothManager.isEnabled {
-            if response.bluetooth { bluetoothManager.enable() } else { bluetoothManager.disable() }
+            let changed = response.bluetooth ? bluetoothManager.enable() : bluetoothManager.disable()
+            didChange = changed || didChange
         }
 
         if response.darkMode != appearanceManager.isDarkMode {
@@ -178,36 +185,55 @@ final class Assistant: ObservableObject {
             } else {
                 try appearanceManager.enableLightMode()
             }
+            didChange = appearanceManager.isDarkMode == response.darkMode || didChange
         }
 
         if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
             try audioManager.switchDevice(to: id)
+            didChange = audioManager.selectedDeviceID == id || didChange
         }
 
         switch response.audioMute {
             case .unchanged: break
-            case .mute: audioManager.mute()
-            case .unmute: audioManager.unmute()
+            case .mute:
+                if audioManager.isMuted != true {
+                    audioManager.mute()
+                    didChange = audioManager.isMuted == true || didChange
+                }
+            case .unmute:
+                if audioManager.isMuted != false {
+                    audioManager.unmute()
+                    didChange = audioManager.isMuted == false || didChange
+                }
         }
 
         switch response.playback {
             case .unchanged: break
-            case .play: playbackManager.play()
-            case .pause: playbackManager.pause()
+            case .play: didChange = await playbackManager.play() || didChange
+            case .pause: didChange = await playbackManager.pause() || didChange
         }
 
         switch response.focus {
             case .unchanged: break
-            case .off: try await focusManager.disable()
-            case .mode(let id): try await focusManager.switchMode(to: id)
+            case .off:
+                if focusManager.isActive != false {
+                    try await focusManager.disable()
+                    didChange = focusManager.isActive == false || didChange
+                }
+            case .mode(let id):
+                if focusManager.isActive != true || focusManager.currentModeID != id {
+                    try await focusManager.switchMode(to: id)
+                    didChange = (focusManager.isActive == true && focusManager.currentModeID == id) || didChange
+                }
         }
 
-        if let id = response.appID {
+        if let id = response.appID,
+           NSWorkspace.shared.frontmostApplication?.bundleURL?.standardizedFileURL.path != id {
             try await appsManager.openApp(id: id)
+            didChange = true
         }
 
-        vpnManager.apply(response.vpnChanges)
-
-        NSSound(named: "Purr")?.play()
+        didChange = vpnManager.apply(response.vpnChanges) || didChange
+        return didChange
     }
 }

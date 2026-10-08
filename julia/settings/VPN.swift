@@ -58,20 +58,32 @@ final class VPN: ObservableObject {
         refresh()
     }
 
-    func apply(_ changes: [VPNChange]) {
+    @discardableResult
+    func apply(_ changes: [VPNChange]) -> Bool {
+        var didChange = false
         for change in changes {
             guard let connection = handles[change.id] else {
                 print("VPN: \(change.id) is no longer available.")
                 continue
             }
+            let status = SCNetworkConnectionGetStatus(connection)
             if change.isConnected {
+                guard status != .connected && status != .connecting else { continue }
                 if !SCNetworkConnectionStart(connection, nil, true) {
                     print("VPN: Couldn't connect \(change.id): \(String(cString: SCErrorString(SCError())))")
+                } else {
+                    didChange = true
                 }
-            } else if !SCNetworkConnectionStop(connection, true) {
-                print("VPN: Couldn't disconnect \(change.id): \(String(cString: SCErrorString(SCError())))")
+            } else {
+                guard status != .disconnected && status != .disconnecting else { continue }
+                if !SCNetworkConnectionStop(connection, true) {
+                    print("VPN: Couldn't disconnect \(change.id): \(String(cString: SCErrorString(SCError())))")
+                } else {
+                    didChange = true
+                }
             }
         }
+        return didChange
     }
 
     private func refresh() {
