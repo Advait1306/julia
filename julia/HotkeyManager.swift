@@ -3,6 +3,8 @@ import ApplicationServices
 import Combine
 import Carbon.HIToolbox
 
+// TODO: deslop required
+
 @MainActor
 final class HotkeyManager: ObservableObject {
     @Published private(set) var globalAccess = false
@@ -15,6 +17,7 @@ final class HotkeyManager: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var watchdog: Timer?
+    private var nextAccessCheck = Date.distantPast
     private var rightCommandDown = false
     private var active = false
 
@@ -48,7 +51,10 @@ final class HotkeyManager: ObservableObject {
         }
         watchdog = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, self.globalAccess, self.rightCommandDown,
+                guard let self else { return }
+                // A menu-bar app may never become active after a permission change.
+                if Date() >= self.nextAccessCheck { self.refreshAccess() }
+                guard self.globalAccess, self.rightCommandDown,
                       !CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(kVK_RightCommand)) else { return }
                 // A lost release is cancellation, never an implicit command.
                 self.cancelHeldKey()
@@ -62,10 +68,14 @@ final class HotkeyManager: ObservableObject {
     }
 
     func refreshAccess() {
+        nextAccessCheck = Date().addingTimeInterval(2)
         let access = CGPreflightListenEventAccess() || AXIsProcessTrusted()
         let changed = globalAccess != access
         globalAccess = access
-        if changed, localMonitor != nil { installGlobalMonitor() }
+        if changed, localMonitor != nil {
+            if !access { cancelHeldKey() }
+            installGlobalMonitor()
+        }
     }
 
     private func installGlobalMonitor() {
