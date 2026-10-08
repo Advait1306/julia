@@ -23,6 +23,7 @@ final class Assistant: ObservableObject {
     let hotkeys = HotkeyManager()
     let wifiManager = Wifi()
     let bluetoothManager = Bluetooth()
+    let appearanceManager = Appearance()
     let playbackManager = Playback()
     let focusManager = Focus()
     let audioManager = Audio()
@@ -153,6 +154,7 @@ final class Assistant: ObservableObject {
         let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
+            darkMode: appearanceManager.isDarkMode,
             audio: .init(devices: audioManager.devices, selectedDeviceID: audioManager.selectedDeviceID,
                          isMuted: audioManager.isMuted),
             focus: .init(modes: focusManager.modes, isActive: focusManager.isActive,
@@ -166,6 +168,14 @@ final class Assistant: ObservableObject {
 
         if response.bluetooth != bluetoothManager.isEnabled {
             if response.bluetooth { bluetoothManager.enable() } else { bluetoothManager.disable() }
+        }
+
+        if response.darkMode != appearanceManager.isDarkMode {
+            if response.darkMode {
+                try appearanceManager.enableDarkMode()
+            } else {
+                try appearanceManager.enableLightMode()
+            }
         }
 
         if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
