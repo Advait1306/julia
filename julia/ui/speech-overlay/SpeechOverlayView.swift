@@ -3,7 +3,6 @@ import SwiftUI
 
 enum SpeechOverlayLayout {
     static let textSize = CGSize(width: 520, height: 320)
-    // Extra space lets the blur reach zero outside the text instead of ending at its edge.
     static let blurSize = CGSize(width: 680, height: 440)
 }
 
@@ -24,7 +23,8 @@ struct SpeechOverlayView: View {
             let values = timeline.value(time: max(0, CACurrentMediaTime() - startedAt))
             GeometryReader { geometry in
                 ZStack(alignment: .topTrailing) {
-                    SpeechBlur(radius: values.blurRadius)
+                    BackgroundBlur(radius: values.blurRadius)
+                    // TODO: Check if component in variable is an antipattern
                     transcript
                         .frame(width: min(SpeechOverlayLayout.textSize.width, geometry.size.width),
                                height: min(SpeechOverlayLayout.textSize.height, geometry.size.height))
@@ -39,11 +39,13 @@ struct SpeechOverlayView: View {
         let time = CACurrentMediaTime()
         let current = timeline.value(time: max(0, time - startedAt))
         let showing = display == .active
+
         let delay: TimeInterval = switch display {
         case .completed: 1.4
         case .message: 6
         case .active, .hidden: 0
         }
+
         let radius: CGFloat = showing ? 18 : 0
         let opacity: Double = showing ? 1 : 0
         let blurDuration = reduceMotion || abs(current.blurRadius - radius) < 0.001 ? 0.0 : 0.24
@@ -77,6 +79,7 @@ struct SpeechOverlayView: View {
                 }
             }
         }
+
         startedAt = time
         let now = Date.now
         // Schedule only the fade frames, then stop; a delayed dismissal needs no timer task.

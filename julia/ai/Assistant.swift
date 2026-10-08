@@ -2,6 +2,8 @@ import AppKit
 import Combine
 import Foundation
 
+// TODO: deslop required
+
 @MainActor
 final class Assistant: ObservableObject {
     enum Phase: Equatable {
@@ -157,33 +159,41 @@ final class Assistant: ObservableObject {
                          currentModeID: focusManager.currentModeID),
             apps: appsManager.installed
         ))
+
         if response.wifi != wifiManager.isEnabled {
             if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
         }
+
         if response.bluetooth != bluetoothManager.isEnabled {
             if response.bluetooth { bluetoothManager.enable() } else { bluetoothManager.disable() }
         }
+
         if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
             try audioManager.switchDevice(to: id)
         }
+
         switch response.audioMute {
-        case .unchanged: break
-        case .mute: audioManager.mute()
-        case .unmute: audioManager.unmute()
+            case .unchanged: break
+            case .mute: audioManager.mute()
+            case .unmute: audioManager.unmute()
         }
+
         switch response.playback {
-        case .unchanged: break
-        case .play: playbackManager.play()
-        case .pause: playbackManager.pause()
+            case .unchanged: break
+            case .play: playbackManager.play()
+            case .pause: playbackManager.pause()
         }
+
         switch response.focus {
-        case .unchanged: break
-        case .off: try await focusManager.disable()
-        case .mode(let id): try await focusManager.switchMode(to: id)
+            case .unchanged: break
+            case .off: try await focusManager.disable()
+            case .mode(let id): try await focusManager.switchMode(to: id)
         }
+
         if let id = response.appID {
             try await appsManager.openApp(id: id)
         }
+
         NSSound(named: "Purr")?.play()
     }
 }

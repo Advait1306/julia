@@ -2,7 +2,7 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-struct SpeechBlur: NSViewRepresentable {
+struct BackgroundBlur: NSViewRepresentable {
     let radius: CGFloat
 
     func makeNSView(context: Context) -> FeatheredBlurView {
@@ -14,6 +14,7 @@ struct SpeechBlur: NSViewRepresentable {
     }
 }
 
+// TODO: deslop required
 /// A variable-radius backdrop preserves the colors behind it and gradually reaches
 /// zero blur at its interior edges. The mask controls radius, not layer opacity.
 /// CABackdropLayer and CAFilter are private Core Animation APIs, resolved at

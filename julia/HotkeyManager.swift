@@ -3,6 +3,8 @@ import ApplicationServices
 import Combine
 import Carbon.HIToolbox
 
+// TODO: deslop required
+
 @MainActor
 final class HotkeyManager: ObservableObject {
     @Published private(set) var globalAccess = false

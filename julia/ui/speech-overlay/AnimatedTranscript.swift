@@ -2,7 +2,8 @@ import Foundation
 import QuartzCore
 import SwiftUI
 
-/// Draws each arriving word with its own fade while retaining native text wrapping.
+// TODO: deslop required
+
 struct AnimatedTranscript: View {
     let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -65,7 +66,6 @@ nonisolated struct TranscriptWord {
         var retained = previous.enumerated().filter { !removed.contains($0.offset) }.map(\.element).makeIterator()
         return incoming.enumerated().map { offset, word in
             if inserted.contains(offset) { return word }
-            // Retain arrival times across insertions, revisions, and punctuation changes.
             return Self(text: word.text, arrivedAt: retained.next()!.arrivedAt)
         }
     }
