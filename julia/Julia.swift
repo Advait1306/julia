@@ -17,10 +17,10 @@ import SwiftUI
 @MainActor
 final class JuliaDelegate: NSObject, NSApplicationDelegate {
     let assistant = Assistant()
-    private var overlay: SpeechOverlayController?
+    private var overlay: SpeechPanel?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        overlay = SpeechOverlayController(assistant: assistant)
+        overlay = SpeechPanel(assistant: assistant)
         Task { await assistant.activate() }
     }
 

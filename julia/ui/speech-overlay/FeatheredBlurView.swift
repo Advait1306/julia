@@ -1,5 +1,18 @@
 import AppKit
 import QuartzCore
+import SwiftUI
+
+struct SpeechBlur: NSViewRepresentable {
+    let radius: CGFloat
+
+    func makeNSView(context: Context) -> FeatheredBlurView {
+        FeatheredBlurView()
+    }
+
+    func updateNSView(_ view: FeatheredBlurView, context: Context) {
+        view.setRadius(radius)
+    }
+}
 
 /// A variable-radius backdrop preserves the colors behind it and gradually reaches
 /// zero blur at its interior edges. The mask controls radius, not layer opacity.
@@ -7,7 +20,6 @@ import QuartzCore
 /// runtime; if unavailable, the view stays transparent rather than adding a fill.
 final class FeatheredBlurView: NSView {
     private var backdrop: CALayer?
-    private var radiusAnimation: OverlayAnimation?
     private var maskSize = NSSize.zero
     private var maskScale: CGFloat = 0
 
@@ -39,16 +51,12 @@ final class FeatheredBlurView: NSView {
         CGFloat((backdrop?.value(forKeyPath: "filters.variableBlur.inputRadius") as? NSNumber)?.doubleValue ?? 0)
     }
 
-    func setRadius(_ radius: CGFloat, duration: TimeInterval = 0, delay: TimeInterval = 0) {
-        cancelAnimation()
+    func setRadius(_ radius: CGFloat) {
         guard let backdrop else { return }
-        radiusAnimation = OverlayAnimation(layer: backdrop, keyPath: "filters.variableBlur.inputRadius",
-                                           key: "blurRadius", to: radius, duration: duration, delay: delay)
-    }
-
-    func cancelAnimation() {
-        radiusAnimation?.cancel()
-        radiusAnimation = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        backdrop.setValue(radius, forKeyPath: "filters.variableBlur.inputRadius")
+        CATransaction.commit()
     }
 
     override func layout() {
