@@ -6,5 +6,7 @@
     <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Julia uses your microphone to transcribe spoken instructions while you hold right Command.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Julia uses System Events to switch between dark and light mode when you ask.</string>
 </dict>
 </plist>

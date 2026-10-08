@@ -11,6 +11,7 @@ import Foundation
 nonisolated struct SettingsState: Encodable, Sendable {
     var wifi: Bool
     var bluetooth: Bool
+    var darkMode: Bool
     var audio: AudioState
     var focus: FocusState
     var apps: [InstalledApp]
@@ -43,6 +44,7 @@ nonisolated struct SettingsDecision: Sendable {
 
     let wifi: Bool
     let bluetooth: Bool
+    let darkMode: Bool
     let audioMute: MuteAction
     let audioDeviceID: UInt32?
     let playback: PlaybackAction
@@ -89,6 +91,18 @@ final class Jev {
             questions: [
                 "wifi": Question(setting: "Wi-Fi", key: "wifi"),
                 "bluetooth": Question(setting: "Bluetooth", key: "bluetooth"),
+                "darkMode": Question(
+                    instructions: """
+                        Should macOS use dark mode or light mode after following the user's `prompt`?
+                        `settings.darkMode` is the current appearance: true means dark mode,
+                        false means light mode. Choose on for dark mode and off for light mode.
+                        Preserve the current state unless the prompt requests an appearance change.
+                        If asked to toggle appearance or dark mode, invert the current state.
+                        Only dark and light mode are supported; preserve the current state for
+                        requests for automatic appearance, accent colors, or other display settings.
+                        """,
+                    criteria: ["on": "Dark mode", "off": "Light mode"]
+                ),
                 "openApp": Question(
                     instructions: """
                         Which installed app does the user's `prompt` request opening, launching,
@@ -213,6 +227,7 @@ final class Jev {
         return SettingsDecision(
             wifi: response.answers.wifi.choice == .on,
             bluetooth: response.answers.bluetooth.choice == .on,
+            darkMode: response.answers.darkMode.choice == .on,
             audioMute: response.answers.audioMute.choice,
             audioDeviceID: deviceID,
             playback: response.answers.playback.choice,
@@ -266,6 +281,7 @@ private nonisolated struct EvaluationResponse: Decodable, Sendable {
     struct Answers: Decodable, Sendable {
         let wifi: Answer<PowerState>
         let bluetooth: Answer<PowerState>
+        let darkMode: Answer<PowerState>
         let audioMute: Answer<SettingsDecision.MuteAction>
         let audioDevice: Answer<String>
         let playback: Answer<SettingsDecision.PlaybackAction>
