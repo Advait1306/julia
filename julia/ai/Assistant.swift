@@ -161,7 +161,7 @@ final class Assistant: ObservableObject {
             focus: .init(modes: focusManager.modes, isActive: focusManager.isActive,
                          currentModeID: focusManager.currentModeID),
             apps: appsManager.installed,
-            vpns: try vpnManager.readConnections()
+            vpns: vpnManager.connections
         ))
 
         if response.wifi != wifiManager.isEnabled {
