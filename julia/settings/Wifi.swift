@@ -34,25 +34,11 @@ final class Wifi: NSObject, ObservableObject, CWEventDelegate {
     
     // MARK: Methods to control wifi
     
-    @discardableResult
-    func enable() throws -> Bool {
-        guard let interface = client.interface() else { throw Failure.unavailableInterface }
-        let wasEnabled = interface.powerOn()
-        try interface.setPower(true)
-        return !wasEnabled && interface.powerOn()
+    func enable() throws {
+        try? client.interface()?.setPower(true)
     }
     
-    @discardableResult
-    func disable() throws -> Bool {
-        guard let interface = client.interface() else { throw Failure.unavailableInterface }
-        let wasEnabled = interface.powerOn()
-        try interface.setPower(false)
-        return wasEnabled && !interface.powerOn()
-    }
-
-    private enum Failure: LocalizedError {
-        case unavailableInterface
-
-        var errorDescription: String? { "No Wi-Fi interface is available." }
+    func disable() throws {
+        try? client.interface()?.setPower(false)
     }
 }

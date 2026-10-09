@@ -24,17 +24,11 @@ final class Bluetooth: NSObject, ObservableObject, CBCentralManagerDelegate {
     }
     
     // Methods
-    @discardableResult
-    func enable() -> Bool {
-        let previousState = IOBluetoothPreferenceGetControllerPowerState()
+    func enable() {
         IOBluetoothPreferenceSetControllerPowerState(1)
-        return previousState != 1 && IOBluetoothPreferenceGetControllerPowerState() == 1
     }
     
-    @discardableResult
-    func disable() -> Bool {
-        let previousState = IOBluetoothPreferenceGetControllerPowerState()
+    func disable() {
         IOBluetoothPreferenceSetControllerPowerState(0)
-        return previousState != 0 && IOBluetoothPreferenceGetControllerPowerState() == 0
     }
 }

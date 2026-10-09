@@ -87,14 +87,14 @@ final class Assistant: ObservableObject {
         phase = .finishing
         task = Task { [weak self] in
             guard let self else { return }
-            var didChange = false
+            var hasActions = false
             do {
                 let text = try await self.sst.finish().trimmingCharacters(in: .whitespacesAndNewlines)
                 guard self.sessionID == id else { return }
                 if !text.isEmpty {
                     self.prompt = text
                     self.phase = .processing
-                    didChange = try await self.runJev(prompt: text)
+                    hasActions = try await self.runJev(prompt: text)
                 }
             } catch {
                 guard self.sessionID == id else { return }
@@ -102,7 +102,7 @@ final class Assistant: ObservableObject {
                 self.speechDisplay = .message(error.localizedDescription)
                 await self.sst.cancel()
             }
-            self.complete(id, didChange: didChange)
+            self.complete(id, hasActions: hasActions)
         }
     }
 
@@ -136,26 +136,26 @@ final class Assistant: ObservableObject {
         phase = .processing
         task = Task { [weak self] in
             guard let self else { return }
-            var didChange = false
-            do { didChange = try await self.runJev(prompt: text) }
+            var hasActions = false
+            do { hasActions = try await self.runJev(prompt: text) }
             catch { print("Assistant: \(error.localizedDescription)") }
-            self.complete(id, didChange: didChange)
+            self.complete(id, hasActions: hasActions)
         }
     }
 
-    private func complete(_ id: UUID, didChange: Bool = false) {
+    private func complete(_ id: UUID, hasActions: Bool = false) {
         guard sessionID == id else { return }
         sessionID = nil
         if speechDisplay == .active {
-            speechDisplay = didChange ? .completed : .hidden
+            speechDisplay = hasActions ? .completed : .hidden
         }
-        if didChange { NSSound(named: "Purr")?.play() }
+        if hasActions { NSSound(named: "Purr")?.play() }
         phase = .idle
         task = nil
     }
 
     private func runJev(prompt: String) async throws -> Bool {
-        let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
+        let state = SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
             darkMode: appearanceManager.isDarkMode,
@@ -165,18 +165,32 @@ final class Assistant: ObservableObject {
                          currentModeID: focusManager.currentModeID),
             apps: appsManager.installed,
             vpns: vpnManager.connections
-        ))
+        )
+        let response = try await jev.evaluate(prompt: prompt, state: state)
+        let hasFocusAction: Bool
 
-        var didChange = false
+        if case .unchanged = response.focus {
+            hasFocusAction = false
+        } else {
+            hasFocusAction = true
+        }
+
+        guard response.wifi != state.wifi
+            || response.bluetooth != state.bluetooth
+            || response.darkMode != state.darkMode
+            || response.audioMute != .unchanged
+            || response.audioDeviceID != nil
+            || response.playback != .unchanged
+            || hasFocusAction
+            || response.appID != nil
+            || !response.vpnChanges.isEmpty else { return false }
 
         if response.wifi != wifiManager.isEnabled {
-            let changed = try response.wifi ? wifiManager.enable() : wifiManager.disable()
-            didChange = changed || didChange
+            if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
         }
 
         if response.bluetooth != bluetoothManager.isEnabled {
-            let changed = response.bluetooth ? bluetoothManager.enable() : bluetoothManager.disable()
-            didChange = changed || didChange
+            if response.bluetooth { bluetoothManager.enable() } else { bluetoothManager.disable() }
         }
 
         if response.darkMode != appearanceManager.isDarkMode {
@@ -185,55 +199,36 @@ final class Assistant: ObservableObject {
             } else {
                 try appearanceManager.enableLightMode()
             }
-            didChange = appearanceManager.isDarkMode == response.darkMode || didChange
         }
 
         if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
             try audioManager.switchDevice(to: id)
-            didChange = audioManager.selectedDeviceID == id || didChange
         }
 
         switch response.audioMute {
             case .unchanged: break
-            case .mute:
-                if audioManager.isMuted != true {
-                    audioManager.mute()
-                    didChange = audioManager.isMuted == true || didChange
-                }
-            case .unmute:
-                if audioManager.isMuted != false {
-                    audioManager.unmute()
-                    didChange = audioManager.isMuted == false || didChange
-                }
+            case .mute: audioManager.mute()
+            case .unmute: audioManager.unmute()
         }
 
         switch response.playback {
             case .unchanged: break
-            case .play: didChange = await playbackManager.play() || didChange
-            case .pause: didChange = await playbackManager.pause() || didChange
+            case .play: playbackManager.play()
+            case .pause: playbackManager.pause()
         }
 
         switch response.focus {
             case .unchanged: break
-            case .off:
-                if focusManager.isActive != false {
-                    try await focusManager.disable()
-                    didChange = focusManager.isActive == false || didChange
-                }
-            case .mode(let id):
-                if focusManager.isActive != true || focusManager.currentModeID != id {
-                    try await focusManager.switchMode(to: id)
-                    didChange = (focusManager.isActive == true && focusManager.currentModeID == id) || didChange
-                }
+            case .off: try await focusManager.disable()
+            case .mode(let id): try await focusManager.switchMode(to: id)
         }
 
-        if let id = response.appID,
-           NSWorkspace.shared.frontmostApplication?.bundleURL?.standardizedFileURL.path != id {
+        if let id = response.appID {
             try await appsManager.openApp(id: id)
-            didChange = true
         }
 
-        didChange = vpnManager.apply(response.vpnChanges) || didChange
-        return didChange
+        vpnManager.apply(response.vpnChanges)
+
+        return true
     }
 }
