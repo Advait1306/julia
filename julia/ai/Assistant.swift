@@ -87,13 +87,14 @@ final class Assistant: ObservableObject {
         phase = .finishing
         task = Task { [weak self] in
             guard let self else { return }
+            var hasActions = false
             do {
                 let text = try await self.sst.finish().trimmingCharacters(in: .whitespacesAndNewlines)
                 guard self.sessionID == id else { return }
                 if !text.isEmpty {
                     self.prompt = text
                     self.phase = .processing
-                    try await self.runJev(prompt: text)
+                    hasActions = try await self.runJev(prompt: text)
                 }
             } catch {
                 guard self.sessionID == id else { return }
@@ -101,7 +102,7 @@ final class Assistant: ObservableObject {
                 self.speechDisplay = .message(error.localizedDescription)
                 await self.sst.cancel()
             }
-            self.complete(id)
+            self.complete(id, hasActions: hasActions)
         }
     }
 
@@ -135,24 +136,26 @@ final class Assistant: ObservableObject {
         phase = .processing
         task = Task { [weak self] in
             guard let self else { return }
-            do { try await self.runJev(prompt: text) }
+            var hasActions = false
+            do { hasActions = try await self.runJev(prompt: text) }
             catch { print("Assistant: \(error.localizedDescription)") }
-            self.complete(id)
+            self.complete(id, hasActions: hasActions)
         }
     }
 
-    private func complete(_ id: UUID) {
+    private func complete(_ id: UUID, hasActions: Bool = false) {
         guard sessionID == id else { return }
         sessionID = nil
         if speechDisplay == .active {
-            speechDisplay = phase == .processing ? .completed : .hidden
+            speechDisplay = hasActions ? .completed : .hidden
         }
+        if hasActions { NSSound(named: "Purr")?.play() }
         phase = .idle
         task = nil
     }
 
-    private func runJev(prompt: String) async throws {
-        let response = try await jev.evaluate(prompt: prompt, state: SettingsState(
+    private func runJev(prompt: String) async throws -> Bool {
+        let state = SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
             darkMode: appearanceManager.isDarkMode,
@@ -162,7 +165,25 @@ final class Assistant: ObservableObject {
                          currentModeID: focusManager.currentModeID),
             apps: appsManager.installed,
             vpns: vpnManager.connections
-        ))
+        )
+        let response = try await jev.evaluate(prompt: prompt, state: state)
+        let hasFocusAction: Bool
+
+        if case .unchanged = response.focus {
+            hasFocusAction = false
+        } else {
+            hasFocusAction = true
+        }
+
+        guard response.wifi != state.wifi
+            || response.bluetooth != state.bluetooth
+            || response.darkMode != state.darkMode
+            || response.audioMute != .unchanged
+            || response.audioDeviceID != nil
+            || response.playback != .unchanged
+            || hasFocusAction
+            || response.appID != nil
+            || !response.vpnChanges.isEmpty else { return false }
 
         if response.wifi != wifiManager.isEnabled {
             if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
@@ -208,6 +229,6 @@ final class Assistant: ObservableObject {
 
         vpnManager.apply(response.vpnChanges)
 
-        NSSound(named: "Purr")?.play()
+        return true
     }
 }
