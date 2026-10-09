@@ -43,10 +43,6 @@ nonisolated struct SettingsDecision: Sendable {
         case unchanged, off, mode(String)
     }
 
-    enum VPNAction: String, Decodable, Sendable {
-        case unchanged, enable, disable
-    }
-
     let wifi: Bool
     let bluetooth: Bool
     let darkMode: Bool
@@ -252,16 +248,10 @@ final class Jev {
             appID = appChoice
         }
 
-        let expectedVPNKeys = Set(state.vpns.map { "vpn_\($0.id)" })
-        guard Set(response.vpnAnswers.keys) == expectedVPNKeys else {
-            throw DecodingError.dataCorrupted(.init(
-                codingPath: [], debugDescription: "Jev returned missing or unavailable VPN choices."
-            ))
-        }
         let vpnChanges = state.vpns.compactMap { vpn -> VPNChange? in
-            switch response.vpnAnswers["vpn_\(vpn.id)"]?.choice {
-            case .enable: return VPNChange(id: vpn.id, isConnected: true)
-            case .disable: return VPNChange(id: vpn.id, isConnected: false)
+            switch response.choices["vpn_\(vpn.id)"]?.choice {
+            case "enable": return VPNChange(id: vpn.id, isConnected: true)
+            case "disable": return VPNChange(id: vpn.id, isConnected: false)
             default: return nil
             }
         }
@@ -333,21 +323,13 @@ private nonisolated struct EvaluationResponse: Decodable, Sendable {
     }
 
     let answers: Answers
-    let vpnAnswers: [String: Answer<SettingsDecision.VPNAction>]
+    let choices: [String: Answer<String>]
 
     private enum CodingKeys: String, CodingKey { case answers }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         answers = try container.decode(Answers.self, forKey: .answers)
-        let allAnswers = try container.decode([String: Answer<String>].self, forKey: .answers)
-        vpnAnswers = try allAnswers.filter { $0.key.hasPrefix("vpn_") }.mapValues { answer in
-            guard let action = SettingsDecision.VPNAction(rawValue: answer.choice) else {
-                throw DecodingError.dataCorrupted(.init(
-                    codingPath: decoder.codingPath, debugDescription: "Jev returned an invalid VPN action."
-                ))
-            }
-            return Answer(choice: action)
-        }
+        choices = try container.decode([String: Answer<String>].self, forKey: .answers)
     }
 }
