@@ -28,6 +28,7 @@ final class Assistant: ObservableObject {
     let focusManager = Focus()
     let audioManager = Audio()
     let appsManager = Apps()
+    let vpnManager = VPN()
 
     private let jev = Jev()
     private var started = false
@@ -159,7 +160,8 @@ final class Assistant: ObservableObject {
                          isMuted: audioManager.isMuted),
             focus: .init(modes: focusManager.modes, isActive: focusManager.isActive,
                          currentModeID: focusManager.currentModeID),
-            apps: appsManager.installed
+            apps: appsManager.installed,
+            vpns: vpnManager.connections
         ))
 
         if response.wifi != wifiManager.isEnabled {
@@ -203,6 +205,8 @@ final class Assistant: ObservableObject {
         if let id = response.appID {
             try await appsManager.openApp(id: id)
         }
+
+        vpnManager.apply(response.vpnChanges)
 
         NSSound(named: "Purr")?.play()
     }
