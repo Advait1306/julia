@@ -1,3 +1,5 @@
+// NOTE: VPN interacts with older macOS C APIs, so some of this code may not look idiomatic in Swift.
+
 import Combine
 import Foundation
 import SystemConfiguration
