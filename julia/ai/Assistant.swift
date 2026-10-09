@@ -206,7 +206,7 @@ final class Assistant: ObservableObject {
             try await appsManager.openApp(id: id)
         }
 
-        try await vpnManager.apply(response.vpnChanges)
+        try vpnManager.apply(response.vpnChanges)
 
         NSSound(named: "Purr")?.play()
     }

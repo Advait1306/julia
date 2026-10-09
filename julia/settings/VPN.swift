@@ -44,7 +44,7 @@ final class VPN {
         }
     }
 
-    func apply(_ changes: [VPNChange]) async throws {
+    func apply(_ changes: [VPNChange]) throws {
         guard !changes.isEmpty else { return }
         let available = try readConnections()
         // Validate the entire batch before changing any connection.
@@ -59,11 +59,9 @@ final class VPN {
         }
 
         var failures: [String] = []
-        var pending: [(name: String, connection: SCNetworkConnection, desired: SCNetworkConnectionStatus)] = []
-        // Issue every request before waiting. A failure for one VPN must not skip the others.
+        // A failure for one VPN must not skip the others.
         // Disconnect first so a requested replacement can connect without competing tunnels.
         for target in targets.sorted(by: { !$0.change.isConnected && $1.change.isConnected }) {
-            try Task.checkCancellation()
             let status = SCNetworkConnectionGetStatus(target.connection)
             let desired: SCNetworkConnectionStatus = target.change.isConnected ? .connected : .disconnected
             if status == desired { continue }
@@ -74,34 +72,12 @@ final class VPN {
             } else {
                 accepted = status == .disconnecting || SCNetworkConnectionStop(target.connection, true)
             }
-            if accepted {
-                pending.append((target.vpn.name, target.connection, desired))
-            } else {
+            if !accepted {
                 let reason = String(cString: SCErrorString(SCError()))
                 failures.append("\(target.vpn.name): \(reason)")
             }
         }
 
-        // Start/stop only acknowledges a request; wait for the actual connection state.
-        let deadline = ContinuousClock.now + .seconds(20)
-        while !pending.isEmpty {
-            try Task.checkCancellation()
-            pending.removeAll { target in
-                let status = SCNetworkConnectionGetStatus(target.connection)
-                if status == target.desired { return true }
-                if status == .invalid {
-                    failures.append("\(target.name): connection failed")
-                    return true
-                }
-                return false
-            }
-            if pending.isEmpty { break }
-            if ContinuousClock.now >= deadline {
-                failures.append(contentsOf: pending.map { "\($0.name): connection change timed out" })
-                break
-            }
-            try await Task.sleep(for: .milliseconds(200))
-        }
         if !failures.isEmpty {
             throw Failure(message: "Couldn't change VPN connections. " + failures.joined(separator: "; "))
         }
