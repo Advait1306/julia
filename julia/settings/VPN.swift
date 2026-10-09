@@ -48,10 +48,10 @@ final class VPN: ObservableObject {
                     Unmanaged<Observer>.fromOpaque(info).takeUnretainedValue().vpn?.refresh()
                 }
             }, &context) || !SCPreferencesSetDispatchQueue(preferences, .main) {
-                logError("Couldn't observe configuration changes")
+                print("VPN: Couldn't observe configuration changes: \(String(cString: SCErrorString(SCError())))")
             }
         } else {
-            logError("Couldn't open network preferences")
+            print("VPN: Couldn't open network preferences: \(String(cString: SCErrorString(SCError())))")
         }
         refresh()
     }
@@ -64,10 +64,10 @@ final class VPN: ObservableObject {
             }
             if change.isConnected {
                 if !SCNetworkConnectionStart(connection, nil, true) {
-                    logError("Couldn't connect \(change.id)")
+                    print("VPN: Couldn't connect \(change.id): \(String(cString: SCErrorString(SCError())))")
                 }
             } else if !SCNetworkConnectionStop(connection, true) {
-                logError("Couldn't disconnect \(change.id)")
+                print("VPN: Couldn't disconnect \(change.id): \(String(cString: SCErrorString(SCError())))")
             }
         }
     }
@@ -76,7 +76,7 @@ final class VPN: ObservableObject {
         guard let preferences else { return }
         SCPreferencesSynchronize(preferences)
         guard let services = SCNetworkServiceCopyAll(preferences) as? [SCNetworkService] else {
-            logError("Couldn't read configured VPNs")
+            print("VPN: Couldn't read configured VPNs: \(String(cString: SCErrorString(SCError())))")
             return
         }
         stopObservingConnections()
@@ -98,7 +98,7 @@ final class VPN: ObservableObject {
             if let connection {
                 handles[id] = connection
                 if !SCNetworkConnectionSetDispatchQueue(connection, .main) {
-                    logError("Couldn't observe connection changes for \(id)")
+                    print("VPN: Couldn't observe connection changes for \(id): \(String(cString: SCErrorString(SCError())))")
                 }
             }
             return VPNConnection(
@@ -134,10 +134,6 @@ final class VPN: ObservableObject {
             return subtype == "L2TP" || subtype == "PPTP"
         default: return false
         }
-    }
-
-    private func logError(_ message: String) {
-        print("VPN: \(message): \(String(cString: SCErrorString(SCError())))")
     }
 
     isolated deinit {
