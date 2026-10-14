@@ -16,6 +16,10 @@ final class Focus: ObservableObject {
         refresh()
     }
 
+    func refreshAccess() {
+        kit.refreshAccess()
+    }
+
     func apply(_ choice: SettingsDecision.FocusChoice) async throws {
         switch choice {
         case .unchanged: break

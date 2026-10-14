@@ -55,18 +55,19 @@ nonisolated struct SettingsDecision: Sendable {
 }
 
 final class Jev {
-    private let apiKey: String?
+    private let apiKeyProvider: () throws -> String?
     private let session: Session
 
-    init(apiKey: String? = nil, session: Session = .default) {
-        self.apiKey = apiKey ?? ProcessInfo.processInfo.environment["JEV_API_KEY"]
+    init(apiKey: String? = nil, session: Session = .default,
+         apiKeyProvider: @escaping () throws -> String? = { try JevKeychain().read() }) {
+        self.apiKeyProvider = apiKey.map { key in { key } } ?? apiKeyProvider
         self.session = session
     }
 
     func evaluate(prompt: String, state: SettingsState) async throws -> SettingsDecision {
-        guard let apiKey, !apiKey.isEmpty else {
+        guard let apiKey = try apiKeyProvider(), !apiKey.isEmpty else {
             throw NSError(domain: "Jev", code: 1, userInfo: [
-                NSLocalizedDescriptionKey: "JEV_API_KEY is missing. Launch Julia with its configured Xcode scheme."
+                NSLocalizedDescriptionKey: "Add your Jev API key in Julia Settings → AI."
             ])
         }
         var deviceChoices = ["unchanged": "Keep the current audio output"]

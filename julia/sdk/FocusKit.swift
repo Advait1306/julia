@@ -331,6 +331,12 @@ final class FocusKit {
         try JSONDecoder().decode(type, from: Data(contentsOf: directory.appendingPathComponent(name)))
     }
 
+    func refreshAccess() {
+        stopObserving()
+        startObserving()
+        updates.send(())
+    }
+
     private func startObserving() {
         // Watch the directory for atomic replacements, and the files for in-place writes.
         // If the database is inaccessible, retain an unavailable state without polling.

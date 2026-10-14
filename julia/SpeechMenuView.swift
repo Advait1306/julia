@@ -1,44 +1,24 @@
 import AppKit
-import AVFoundation
 import SwiftUI
 
 struct SpeechMenuView: View {
+    @Environment(\.openSettings) private var openSettings
+    @Environment(\.openWindow) private var openWindow
+    @ObservedObject var setup: AppSetup
     @ObservedObject var assistant: Assistant
     @ObservedObject var sst: SST
-    @ObservedObject var hotkeys: HotkeyManager
 
     var body: some View {
-        Text("Hold right Command to speak")
-        Text("Release to send · Esc to cancel")
-        Divider()
-
-        Text(modelStatus)
-        if sst.modelState != .ready {
-            Button(sst.modelState == .failed ? "Retry model download" : "Download speech model") {
-                Task { await sst.downloadModel() }
-            }
-            .disabled(sst.isPreparingModel)
-        }
-
-        if sst.microphoneEnabled {
-            Text("Microphone enabled")
+        if setup.isComplete {
+            Text("Hold right Command to speak")
+            Text("Release to send · Esc to cancel")
+            if !setup.hasAPIKey { Text("Add a Jev API key in Settings") }
+            if sst.modelState != .ready { Text("Prepare the speech model in Settings") }
         } else {
-            Button("Enable microphone…") {
-                Task {
-                    await sst.enableMicrophone()
-                    if !sst.microphoneEnabled {
-                        openPrivacySettings("Microphone")
-                    }
-                }
-            }
-        }
-
-        if hotkeys.globalAccess {
-            Text("Global hotkey enabled")
-        } else {
-            Button("Enable global hotkey…") { hotkeys.requestGlobalAccess() }
-            Button("Open Input Monitoring settings…") {
-                openPrivacySettings("ListenEvent")
+            Text("Finish setting up voice input")
+            Button("Set up Julia…") {
+                openWindow(id: "onboarding")
+                NSApp.activate(ignoringOtherApps: true)
             }
         }
 
@@ -48,27 +28,19 @@ struct SpeechMenuView: View {
         }
 
         Divider()
+        Button("Settings…") {
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+        }
+            // A native menu key equivalent, not a global hotkey registration.
+            .keyboardShortcut(",")
+        Divider()
         Button("Quit Julia") { NSApplication.shared.terminate(nil) }
             .keyboardShortcut("q")
             .onAppear {
+                setup.refreshKeyStatus()
                 sst.refreshMicrophonePermission()
-                hotkeys.refreshAccess()
+                assistant.hotkeys.refreshAccess()
             }
-    }
-
-    private var modelStatus: String {
-        switch sst.modelState {
-        case .checking: "Checking speech model…"
-        case .notDownloaded: "Speech model needs downloading"
-        case .downloading(let progress): "Downloading speech model… \(Int(progress * 100))%"
-        case .preparing: "Preparing speech model…"
-        case .ready: "Speech model ready"
-        case .failed: "Speech model couldn't load"
-        }
-    }
-
-    private func openPrivacySettings(_ pane: String) {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_\(pane)") else { return }
-        NSWorkspace.shared.open(url)
     }
 }

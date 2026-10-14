@@ -49,13 +49,6 @@
             ReferencedContainer = "container:julia.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "JEV_API_KEY"
-            value = "apikey_2136992e850198654f76a944d75db1baf98c_2f6d41eddf06beea89a46dccd6f11df1c0c44826d8f2edc6e23cc5a4f13ede05"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

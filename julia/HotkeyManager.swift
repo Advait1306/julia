@@ -7,7 +7,11 @@ import Carbon.HIToolbox
 
 @MainActor
 final class HotkeyManager: ObservableObject {
+    // Device-specific right-Command bit from IOKit's NX_DEVICERCMDKEYMASK.
+    private static let rightCommandMask: UInt64 = 0x10
+
     @Published private(set) var globalAccess = false
+    @Published private(set) var rightCommandDown = false
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -18,7 +22,6 @@ final class HotkeyManager: ObservableObject {
     private var workspaceObservers: [NSObjectProtocol] = []
     private var watchdog: Timer?
     private var nextAccessCheck = Date.distantPast
-    private var rightCommandDown = false
     private var active = false
 
     func start() {
@@ -55,7 +58,9 @@ final class HotkeyManager: ObservableObject {
                 // A menu-bar app may never become active after a permission change.
                 if Date() >= self.nextAccessCheck { self.refreshAccess() }
                 guard self.globalAccess, self.rightCommandDown,
-                      !CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(kVK_RightCommand)) else { return }
+                      CGEventSource.flagsState(.combinedSessionState).rawValue & Self.rightCommandMask == 0 else { return }
+                // Command is a modifier: keyState can report false while it is held.
+                // Check the same device-specific flag used by flagsChanged events.
                 // A lost release is cancellation, never an implicit command.
                 self.cancelHeldKey()
             }
@@ -104,10 +109,9 @@ final class HotkeyManager: ObservableObject {
                flags: event.cgEvent?.flags.rawValue ?? UInt64(event.modifierFlags.rawValue))
     }
 
-    // Device-specific right-Command bit from IOKit's NX_DEVICERCMDKEYMASK.
     // The aggregate .command flag stays set when left Command remains held.
     func handle(type: NSEvent.EventType, keyCode: UInt16, flags: UInt64) {
-        let rightDown = flags & 0x10 != 0
+        let rightDown = flags & Self.rightCommandMask != 0
         if type == .flagsChanged {
             if rightCommandDown, !rightDown {
                 rightCommandDown = false

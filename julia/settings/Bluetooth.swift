@@ -16,7 +16,18 @@ final class Bluetooth: NSObject, ObservableObject, CBCentralManagerDelegate {
     
     override init() {
         super.init()
-        manager = CBCentralManager(delegate: self, queue: .main)
+        startIfAuthorized()
+    }
+
+    func startIfAuthorized() {
+        guard CBManager.authorization == .allowedAlways else { return }
+        requestAccess()
+    }
+
+    func requestAccess() {
+        guard manager == nil else { return }
+        manager = CBCentralManager(delegate: self, queue: .main,
+                                   options: [CBCentralManagerOptionShowPowerAlertKey: false])
     }
     
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
