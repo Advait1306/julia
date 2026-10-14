@@ -3,6 +3,14 @@ import Foundation
 
 @MainActor
 final class Playback: ObservableObject {
+    func apply(_ action: SettingsDecision.PlaybackAction) {
+        switch action {
+        case .unchanged: break
+        case .play: play()
+        case .pause: pause()
+        }
+    }
+
     func play() {
         send(.play)
     }

@@ -68,6 +68,11 @@ final class Apps: ObservableObject {
         }
     }
 
+    func apply(_ id: String?) async throws {
+        guard let id else { return }
+        try await openApp(id: id)
+    }
+
     func openApp(id: String) async throws {
         guard installed.contains(where: { $0.id == id }),
               InstalledApp(url: URL(fileURLWithPath: id)) != nil else {

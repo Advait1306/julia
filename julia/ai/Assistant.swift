@@ -2,8 +2,6 @@ import AppKit
 import Combine
 import Foundation
 
-// TODO: deslop required
-
 @MainActor
 final class Assistant: ObservableObject {
     enum Phase: Equatable {
@@ -94,7 +92,7 @@ final class Assistant: ObservableObject {
                 if !text.isEmpty {
                     self.prompt = text
                     self.phase = .processing
-                    hasActions = try await self.runJev(prompt: text)
+                    hasActions = try await self.execute(prompt: text)
                 }
             } catch {
                 guard self.sessionID == id else { return }
@@ -137,7 +135,7 @@ final class Assistant: ObservableObject {
         task = Task { [weak self] in
             guard let self else { return }
             var hasActions = false
-            do { hasActions = try await self.runJev(prompt: text) }
+            do { hasActions = try await self.execute(prompt: text) }
             catch { print("Assistant: \(error.localizedDescription)") }
             self.complete(id, hasActions: hasActions)
         }
@@ -154,7 +152,7 @@ final class Assistant: ObservableObject {
         task = nil
     }
 
-    private func runJev(prompt: String) async throws -> Bool {
+    private func execute(prompt: String) async throws -> Bool {
         let state = SettingsState(
             wifi: wifiManager.isEnabled,
             bluetooth: bluetoothManager.isEnabled,
@@ -166,14 +164,8 @@ final class Assistant: ObservableObject {
             apps: appsManager.installed,
             vpns: vpnManager.connections
         )
-        let response = try await jev.evaluate(prompt: prompt, state: state)
-        let hasFocusAction: Bool
 
-        if case .unchanged = response.focus {
-            hasFocusAction = false
-        } else {
-            hasFocusAction = true
-        }
+        let response = try await jev.evaluate(prompt: prompt, state: state)
 
         guard response.wifi != state.wifi
             || response.bluetooth != state.bluetooth
@@ -181,52 +173,17 @@ final class Assistant: ObservableObject {
             || response.audioMute != .unchanged
             || response.audioDeviceID != nil
             || response.playback != .unchanged
-            || hasFocusAction
+            || response.focus != .unchanged
             || response.appID != nil
             || !response.vpnChanges.isEmpty else { return false }
 
-        if response.wifi != wifiManager.isEnabled {
-            if response.wifi { try wifiManager.enable() } else { try wifiManager.disable() }
-        }
-
-        if response.bluetooth != bluetoothManager.isEnabled {
-            if response.bluetooth { bluetoothManager.enable() } else { bluetoothManager.disable() }
-        }
-
-        if response.darkMode != appearanceManager.isDarkMode {
-            if response.darkMode {
-                try appearanceManager.enableDarkMode()
-            } else {
-                try appearanceManager.enableLightMode()
-            }
-        }
-
-        if let id = response.audioDeviceID, id != audioManager.selectedDeviceID {
-            try audioManager.switchDevice(to: id)
-        }
-
-        switch response.audioMute {
-            case .unchanged: break
-            case .mute: audioManager.mute()
-            case .unmute: audioManager.unmute()
-        }
-
-        switch response.playback {
-            case .unchanged: break
-            case .play: playbackManager.play()
-            case .pause: playbackManager.pause()
-        }
-
-        switch response.focus {
-            case .unchanged: break
-            case .off: try await focusManager.disable()
-            case .mode(let id): try await focusManager.switchMode(to: id)
-        }
-
-        if let id = response.appID {
-            try await appsManager.openApp(id: id)
-        }
-
+        try wifiManager.apply(response.wifi)
+        bluetoothManager.apply(response.bluetooth)
+        try appearanceManager.apply(response.darkMode)
+        try audioManager.apply(deviceID: response.audioDeviceID, mute: response.audioMute)
+        playbackManager.apply(response.playback)
+        try await focusManager.apply(response.focus)
+        try await appsManager.apply(response.appID)
         vpnManager.apply(response.vpnChanges)
 
         return true

@@ -23,6 +23,18 @@ final class Audio: ObservableObject {
         refresh()
     }
 
+    func apply(deviceID: AudioDeviceID?, mute: SettingsDecision.MuteAction) throws {
+        if let id = deviceID, id != selectedDeviceID {
+            try switchDevice(to: id)
+        }
+
+        switch mute {
+        case .unchanged: break
+        case .mute: self.mute()
+        case .unmute: unmute()
+        }
+    }
+
     func mute() {
         setMuted(true)
     }

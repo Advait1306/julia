@@ -15,6 +15,11 @@ final class Appearance: ObservableObject {
         }
     }
 
+    func apply(_ darkMode: Bool) throws {
+        guard darkMode != isDarkMode else { return }
+        if darkMode { try enableDarkMode() } else { try enableLightMode() }
+    }
+
     func enableDarkMode() throws {
         try setDarkMode(true)
     }

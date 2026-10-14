@@ -34,6 +34,11 @@ final class Wifi: NSObject, ObservableObject, CWEventDelegate {
     
     // MARK: Methods to control wifi
     
+    func apply(_ enabled: Bool) throws {
+        guard enabled != isEnabled else { return }
+        if enabled { try enable() } else { try disable() }
+    }
+
     func enable() throws {
         try? client.interface()?.setPower(true)
     }

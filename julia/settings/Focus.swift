@@ -16,6 +16,14 @@ final class Focus: ObservableObject {
         refresh()
     }
 
+    func apply(_ choice: SettingsDecision.FocusChoice) async throws {
+        switch choice {
+        case .unchanged: break
+        case .off: try await disable()
+        case .mode(let id): try await switchMode(to: id)
+        }
+    }
+
     func switchMode(to id: String) async throws {
         try await setMode(id)
     }

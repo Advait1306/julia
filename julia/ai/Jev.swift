@@ -39,7 +39,7 @@ nonisolated struct SettingsDecision: Sendable {
         case unchanged, play, pause
     }
 
-    enum FocusChoice: Sendable {
+    enum FocusChoice: Equatable, Sendable {
         case unchanged, off, mode(String)
     }
 
